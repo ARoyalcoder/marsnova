@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1
+# -----------------------------------------------------------------------------
+# MarsNova C++ Drogon Backend Production Dockerfile (Multi-stage)
+# Stage 1: Compile the C++17 Drogon server binary with CMake & GCC
+# Stage 2: Create a minimal, hardened Debian runtime image
+# -----------------------------------------------------------------------------
+
+# Stage 1: Build Environment
+FROM debian:bookworm-slim AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install essential compilation toolchain and database development libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    ca-certificates \
+    libjsoncpp-dev \
+    libpq-dev \
+    libssl-dev \
+    uuid-dev \
+    zlib1g-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/backend
+
+# Copy backend source tree
+COPY backend/ ./
+
+# Configure and compile release binary
+RUN cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_STANDARD=17 \
+    && cmake --build build --target marsnova_backend -j$(nproc)
+
+# Stage 2: Minimal Production Runtime
+FROM debian:bookworm-slim AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install only shared runtime libraries, CA certificates, and curl for health check
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libjsoncpp25 \
+    libpq5 \
+    libssl3 \
+    zlib1g \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create dedicated non-root service user and group
+RUN groupadd -g 10001 marsnova && \
+    useradd -u 10001 -g marsnova -m -s /bin/bash marsnova
+
+WORKDIR /app
+
+# Copy compiled backend binary from builder stage
+COPY --from=builder /src/backend/build/marsnova_backend /usr/local/bin/marsnova_backend
+
+# Copy default config template and runtime entrypoint
+COPY backend/config.json /app/config.json
+COPY docker/scripts/entrypoint-backend.sh /entrypoint-backend.sh
+
+# Prepare uploads directory and assign ownership
+RUN mkdir -p /app/uploads && \
+    chmod +x /entrypoint-backend.sh /usr/local/bin/marsnova_backend && \
+    chown -R marsnova:marsnova /app
+
+# Switch to non-root execution
+USER marsnova
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://127.0.0.1:8080/api/v1/health || exit 1
+
+STOPSIGNAL SIGTERM
+
+ENTRYPOINT ["/entrypoint-backend.sh"]
+CMD ["/usr/local/bin/marsnova_backend"]

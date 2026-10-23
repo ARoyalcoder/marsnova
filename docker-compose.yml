@@ -1,0 +1,132 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL Database (Private Networked & Persisted)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: marsnova-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-marsnova_db}
+      POSTGRES_USER: ${POSTGRES_USER:-marsnova_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be provided}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - marsnova_private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marsnova_app} -d ${POSTGRES_DB:-marsnova_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # 2. Automated Migration Runner (Idempotent 001 - 008 Migrations)
+  # ---------------------------------------------------------------------------
+  migration:
+    image: postgres:16-alpine
+    container_name: marsnova-migration
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-marsnova_db}
+      DB_USER: ${POSTGRES_USER:-marsnova_app}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be provided}
+    volumes:
+      - ./backend/migrations:/migrations:ro
+      - ./docker/scripts/migrate.sh:/migrate.sh:ro
+    entrypoint: ["/bin/sh", "/migrate.sh"]
+    networks:
+      - marsnova_private
+
+  # ---------------------------------------------------------------------------
+  # 3. Drogon C++ High-Performance Backend
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: marsnova-backend:latest
+    container_name: marsnova-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-marsnova_db}
+      DB_USER: ${POSTGRES_USER:-marsnova_app}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PORT: 8080
+      APP_THREADS: ${APP_THREADS:-4}
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-25M}
+      SESSION_SECRET: ${SESSION_SECRET:-replace_with_random_64char_hex_session_secret}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80,https://marsnova.in}
+      WHATSAPP_NUMBER: ${WHATSAPP_NUMBER:-917208591595}
+    volumes:
+      - backend_uploads:/app/uploads
+    networks:
+      - marsnova_private
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # 4. Nginx Public Gateway (Frontend SPA + API Reverse Proxy)
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    image: marsnova-gateway:latest
+    container_name: marsnova-gateway
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+      - backend_uploads:/usr/share/nginx/html/uploads:ro
+    networks:
+      - marsnova_private
+      - marsnova_public
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# -----------------------------------------------------------------------------
+# Networks: Private database isolation & public ingress
+# -----------------------------------------------------------------------------
+networks:
+  marsnova_private:
+    internal: true
+    driver: bridge
+  marsnova_public:
+    driver: bridge
+
+# -----------------------------------------------------------------------------
+# Persistent Volumes
+# -----------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    driver: local
+  backend_uploads:
+    driver: local

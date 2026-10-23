@@ -1,0 +1,32 @@
+{
+  "listeners": [
+    {
+      "address": "0.0.0.0",
+      "port": 8080,
+      "https": false
+    }
+  ],
+  "db_clients": [
+    {
+      "name": "default",
+      "rdbms": "postgresql",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "dbname": "marsnova_db",
+      "user": "postgres",
+      "passwd": "${DB_PASSWORD}",
+      "is_fast": false,
+      "connection_number": 5
+    }
+  ],
+  "app": {
+    "number_of_threads": 4,
+    "enable_session": false,
+    "upload_path": "./uploads",
+    "client_max_body_size": "10M"
+  },
+  "custom_config": {
+    "cors_allowed_origins": ["http://localhost:5173", "http://localhost:3000"],
+    "whatsapp_business_number": "917208591595"
+  }
+}

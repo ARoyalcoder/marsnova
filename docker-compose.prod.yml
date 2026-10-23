@@ -1,0 +1,88 @@
+# -----------------------------------------------------------------------------
+# MarsNova Production Docker Compose Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# -----------------------------------------------------------------------------
+
+services:
+  postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  backend:
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1024M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  gateway:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    volumes:
+      - ./docker/nginx/conf.d/ssl.conf.template:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/nginx/certs:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Automated Daily Database Backup Service
+  backup:
+    image: postgres:16-alpine
+    container_name: marsnova-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-marsnova_db}
+      DB_USER: ${POSTGRES_USER:-marsnova_app}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./docker/scripts/backup.sh:/backup.sh:ro
+      - postgres_backups:/backups
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "[Backup Daemon] Started scheduled backup daemon (Interval: 24h)..."
+        while true; do
+          /bin/sh /backup.sh || echo "[Backup Daemon] Warning: backup execution encountered errors"
+          sleep 86400
+        done
+    networks:
+      - marsnova_private
+
+volumes:
+  postgres_backups:
+    driver: local
