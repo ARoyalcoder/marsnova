@@ -49,21 +49,30 @@ DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayNam
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
+>(({ className, sideOffset = 8, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        'z-50 min-w-[10rem] overflow-hidden rounded-md border border-[var(--border-color,#101B2B)] bg-[var(--surface-card,#080F1D)] p-1.5 text-[var(--text-main,#F5F7FF)] shadow-xl',
+        'dropdown-menu-content z-50 min-w-[16rem] overflow-hidden rounded-xl border border-[var(--border-color,#101B2B)] bg-[var(--surface-card,#080F1D)] p-2 text-[var(--text-main,#F5F7FF)] shadow-2xl',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className
       )}
       style={{
-        backgroundColor: '#080F1D',
-        borderColor: '#101B2B',
-        boxShadow: '0 10px 30px -5px rgba(0,0,0,0.8), 0 0 15px rgba(121, 25, 245, 0.1)',
+        backgroundColor: 'rgba(8, 15, 29, 0.96)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border: '1px solid rgba(168, 85, 247, 0.3)',
+        borderRadius: '16px',
+        boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.9), 0 0 20px rgba(121, 25, 245, 0.25)',
         color: '#F5F7FF',
+        minWidth: '260px',
+        padding: '8px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        zIndex: 150,
         ...props.style
       }}
       {...props}
@@ -77,14 +86,28 @@ const DropdownMenuItem = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
     inset?: boolean;
   }
->(({ className, inset, ...props }, ref) => (
+>(({ className, inset, style, ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex cursor-pointer select-none items-center rounded-sm px-2.5 py-1.5 text-sm outline-none transition-colors hover:bg-[var(--surface-hover,#101B2B)] focus:bg-[var(--purple-primary,#7919F5)] focus:text-white data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'dropdown-menu-item relative flex cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm outline-none transition-all hover:bg-[rgba(168,85,247,0.12)] focus:bg-[rgba(168,85,247,0.16)] focus:text-white data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       inset && 'pl-8',
       className
     )}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '8px 12px',
+      borderRadius: '10px',
+      color: '#fff',
+      cursor: 'pointer',
+      outline: 'none',
+      textDecoration: 'none',
+      transition: 'all 0.15s ease',
+      width: '100%',
+      ...style
+    }}
     {...props}
   />
 ));
@@ -156,10 +179,17 @@ DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
 const DropdownMenuSeparator = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
->(({ className, ...props }, ref) => (
+>(({ className, style, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn('-mx-1 my-1 h-px bg-[var(--border-color,#101B2B)]', className)}
+    className={cn('dropdown-menu-separator -mx-1 my-1.5 h-px bg-[var(--border-color,#101B2B)]', className)}
+    style={{
+      height: '1px',
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      margin: '4px 2px',
+      border: 'none',
+      ...style
+    }}
     {...props}
   />
 ));

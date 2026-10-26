@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
-import { Sparkles, Menu, X, ArrowRight, HardDrive, ChevronDown } from 'lucide-react';
+import { Sparkles, Menu, X, ArrowRight, HardDrive, ChevronDown, ChevronRight, Compass, Film, GraduationCap, ShieldCheck, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { modalBackdropVariants, mobileDrawerVariants } from '../animations/variants';
 import {
@@ -16,6 +16,52 @@ import {
   DropdownMenuTrigger
 } from './ui';
 
+/**
+ * Custom SVG Icons Matching User Design Reference
+ */
+const WandSparklesIcon: React.FC<{ size?: number; color?: string }> = ({ size = 20, color = '#9333EA' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m14 7 3 3" />
+    <path d="M5 6v4" />
+    <path d="M19 14v4" />
+    <path d="M10 2v2" />
+    <path d="M7 8H3" />
+    <path d="M21 16h-4" />
+    <path d="M11 3H9" />
+    <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z" />
+  </svg>
+);
+
+const FilmPlayIcon: React.FC<{ size?: number; color?: string }> = ({ size = 20, color = '#0284C7' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="18" rx="3" />
+    <path d="M7 3v18" />
+    <path d="M17 3v18" />
+    <path d="M3 7.5h4" />
+    <path d="M3 12h4" />
+    <path d="M3 16.5h4" />
+    <path d="M17 7.5h4" />
+    <path d="M17 12h4" />
+    <path d="M17 16.5h4" />
+    <polygon points="11 9.5 15 12 11 14.5 11 9.5" fill={color} />
+  </svg>
+);
+
+const AcademyGradCapIcon: React.FC<{ size?: number; color?: string }> = ({ size = 20, color = '#E11D48' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+    <path d="M6 12v5c3 3 9 3 12 0v-5" />
+  </svg>
+);
+
+const ShieldUserIcon: React.FC<{ size?: number; color?: string }> = ({ size = 20, color = '#7C3AED' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <circle cx="12" cy="10" r="2.8" />
+    <path d="M7.5 17.5a4.5 4.5 0 0 1 9 0" />
+  </svg>
+);
+
 export interface NavbarProps {
   onOpenRecoveryTracker?: () => void;
 }
@@ -25,6 +71,37 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenRecoveryTracker }) => {
   const location = useLocation();
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleBtnRef = useRef<HTMLButtonElement>(null);
+
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    return localStorage.getItem('marsnova_theme') === 'dark';
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem('marsnova_theme');
+    if (saved === 'dark') {
+      document.body.classList.add('theme-dark');
+      document.body.classList.remove('theme-porcelain-ice');
+      setIsDark(true);
+    } else {
+      document.body.classList.remove('theme-dark');
+      document.body.classList.add('theme-porcelain-ice');
+      setIsDark(false);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    if (isDark) {
+      document.body.classList.remove('theme-dark');
+      document.body.classList.add('theme-porcelain-ice');
+      localStorage.setItem('marsnova_theme', 'porcelain');
+      setIsDark(false);
+    } else {
+      document.body.classList.add('theme-dark');
+      document.body.classList.remove('theme-porcelain-ice');
+      localStorage.setItem('marsnova_theme', 'dark');
+      setIsDark(true);
+    }
+  };
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -97,25 +174,79 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenRecoveryTracker }) => {
         <div className="nav-actions">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="hidden md:inline-flex items-center gap-1">
+              <button
+                type="button"
+                className="explore-btn hidden md:inline-flex"
+                aria-label="Explore studio directory"
+              >
+                <Compass size={14} style={{ color: 'var(--cyan-accent)' }} />
                 <span>Explore</span>
-                <ChevronDown size={14} />
-              </Button>
+                <ChevronDown size={13} style={{ opacity: 0.7 }} />
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link to="/services">Creative & Tech Services</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/portfolio">Portfolio Case Studies</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/lab">MarsNova Lab Academy</Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link to="/admin">Operations Admin</Link>
-              </DropdownMenuItem>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={10}
+              className="explore-popover-card"
+            >
+              {[
+                {
+                  path: '/services',
+                  title: 'Creative & Tech Services',
+                  subtitle: 'Video, Editing & Social',
+                  icon: <WandSparklesIcon size={22} color="#9333EA" />,
+                  iconBg: '#F3E8FF'
+                },
+                {
+                  path: '/portfolio',
+                  title: 'Portfolio Case Studies',
+                  subtitle: 'Client Works & Showreels',
+                  icon: <FilmPlayIcon size={22} color="#0284C7" />,
+                  iconBg: '#E0F2FE'
+                },
+                {
+                  path: '/lab',
+                  title: 'MarsNova Lab Academy',
+                  subtitle: 'Workshops & Mentorship',
+                  icon: <AcademyGradCapIcon size={22} color="#E11D48" />,
+                  iconBg: '#FFE4E6'
+                },
+                {
+                  path: '/admin',
+                  title: 'Operations Admin',
+                  subtitle: 'Staff Portal & Inquiries',
+                  icon: <ShieldUserIcon size={22} color="#7C3AED" />,
+                  iconBg: '#EDE9FE'
+                }
+              ].map((item) => {
+                const isActive = location.pathname.startsWith(item.path);
+                return (
+                  <DropdownMenuItem key={item.path} asChild style={{ padding: 0, background: 'transparent' }}>
+                    <Link
+                      to={item.path}
+                      className={`explore-nav-item ${isActive ? 'active' : ''}`}
+                    >
+                      {isActive && <span className="explore-active-pill" aria-hidden="true" />}
+                      <div className="explore-item-left">
+                        <div
+                          className="explore-item-icon-box"
+                          style={{ backgroundColor: item.iconBg }}
+                        >
+                          {item.icon}
+                        </div>
+                        <div className="explore-item-text">
+                          <span className="explore-item-title">{item.title}</span>
+                          <span className="explore-item-subtitle">{item.subtitle}</span>
+                        </div>
+                      </div>
+                      <ChevronRight
+                        size={20}
+                        className={`explore-item-chevron ${isActive ? 'active' : ''}`}
+                      />
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -133,6 +264,33 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenRecoveryTracker }) => {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+
+          {/* Theme Mode Toggle (Matches Neumorphic Moon in User Reference) */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={isDark ? 'Switch to Soft Porcelain Ice Theme' : 'Switch to Dark Theme'}
+            title={isDark ? 'Switch to Soft Porcelain Ice Theme' : 'Switch to Dark Theme'}
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '12px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFFFFF',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(255, 255, 255, 0.95)',
+              boxShadow: isDark
+                ? 'none'
+                : '3px 3px 8px rgba(166, 185, 214, 0.35), -3px -3px 8px #FFFFFF',
+              color: isDark ? '#F5F7FF' : '#0F172A',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              flexShrink: 0
+            }}
+          >
+            {isDark ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
 
           {/* Accessible Mobile Menu Toggle Button */}
           <button
@@ -186,7 +344,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenRecoveryTracker }) => {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
-                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8)'
+                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8)',
+                maxHeight: 'calc(100vh - 72px)',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch'
               }}
             >
               {navItems.map((item) => (

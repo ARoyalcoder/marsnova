@@ -4,12 +4,15 @@ import { cn } from '@/lib/utils';
 const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto rounded-lg border border-[var(--border-color,#101B2B)]">
+>(({ className, style, ...props }, ref) => (
+  <div
+    className="ui-table-wrap relative w-full overflow-auto rounded-lg border border-[var(--border-color,#101B2B)]"
+    style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%' }}
+  >
     <table
       ref={ref}
-      className={cn('w-full caption-bottom text-sm text-[var(--text-main,#F5F7FF)]', className)}
-      style={{ borderCollapse: 'collapse', width: '100%' }}
+      className={cn('ui-table w-full caption-bottom text-sm text-[var(--text-main,#F5F7FF)]', className)}
+      style={{ borderCollapse: 'collapse', width: '100%', minWidth: '600px', ...style }}
       {...props}
     />
   </div>
@@ -22,7 +25,7 @@ const TableHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <thead
     ref={ref}
-    className={cn('[&_tr]:border-b [&_tr]:border-[var(--border-color,#101B2B)] bg-[var(--surface-hover,#101B2B)]', className)}
+    className={cn('ui-thead [&_tr]:border-b [&_tr]:border-[var(--border-color,#101B2B)] bg-[var(--surface-hover,#101B2B)]', className)}
     {...props}
   />
 ));
@@ -62,7 +65,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      'border-b border-[var(--border-color,#101B2B)] transition-colors hover:bg-[var(--surface-hover,#101B2B)]/60 data-[state=selected]:bg-[var(--surface-hover,#101B2B)]',
+      'ui-tr border-b border-[var(--border-color,#101B2B)] transition-colors hover:bg-[var(--surface-hover,#101B2B)]/60 data-[state=selected]:bg-[var(--surface-hover,#101B2B)]',
       className
     )}
     {...props}
@@ -77,7 +80,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'h-11 px-4 text-left align-middle font-semibold text-[var(--cyan-accent,#38BDF8)] [&:has([role=checkbox])]:pr-0',
+      'ui-th h-11 px-4 text-left align-middle font-semibold text-[var(--cyan-accent,#38BDF8)] [&:has([role=checkbox])]:pr-0',
       className
     )}
     {...props}
@@ -91,7 +94,7 @@ const TableCell = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <td
     ref={ref}
-    className={cn('p-4 align-middle text-[var(--text-muted,#94A3B8)] [&:has([role=checkbox])]:pr-0', className)}
+    className={cn('ui-td p-4 align-middle text-[var(--text-muted,#94A3B8)] [&:has([role=checkbox])]:pr-0', className)}
     {...props}
   />
 ));

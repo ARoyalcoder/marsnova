@@ -189,6 +189,7 @@ export const CourseDetailPage: React.FC = () => {
       <div style={{ padding: '80px 0' }}>
         <Container size="narrow">
           <EmptyState
+            headingLevel={1}
             title="Course Not Found"
             description={`We could not locate a course matching "/lab/courses/${slug}". Browse our full catalogue of practical studio and technology courses.`}
             action={{
@@ -235,11 +236,11 @@ export const CourseDetailPage: React.FC = () => {
 
         {/* Course Header Banner */}
         <div
+          className="responsive-card-padding"
           style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border-highlight)',
             borderRadius: 'var(--radius-xl)',
-            padding: '40px',
             marginBottom: '48px',
             position: 'relative'
           }}
@@ -255,12 +256,12 @@ export const CourseDetailPage: React.FC = () => {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px', marginBottom: '20px', flexWrap: 'wrap' }}>
             <div className="service-icon-box" style={{ flexShrink: 0, marginTop: '4px' }}>
               {getCourseIcon(course.icon)}
             </div>
             <div>
-              <h1 style={{ fontSize: '36px', fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: '12px' }}>
+              <h1 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: '12px' }}>
                 {course.title}
               </h1>
               <p style={{ color: 'var(--text-muted)', fontSize: '17px', lineHeight: 1.6, maxWidth: '800px' }}>
@@ -287,10 +288,8 @@ export const CourseDetailPage: React.FC = () => {
 
         {/* Two Column Layout: Main Content + Course Summary Sidebar */}
         <div
+          className="responsive-detail-grid"
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: '40px',
             marginBottom: '60px',
             alignItems: 'start'
           }}
@@ -299,7 +298,7 @@ export const CourseDetailPage: React.FC = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
             {/* Overview */}
             {course.overview && (
-              <Card style={{ padding: '32px' }}>
+              <Card className="responsive-card-padding">
                 <div className="eyebrow-tag" style={{ marginBottom: '12px' }}>
                   <Sparkles size={14} />
                   <span>Program Overview</span>
@@ -315,7 +314,7 @@ export const CourseDetailPage: React.FC = () => {
 
             {/* Learning Outcomes */}
             {course.learningOutcomes && course.learningOutcomes.length > 0 && (
-              <Card style={{ padding: '32px' }}>
+              <Card className="responsive-card-padding">
                 <div className="eyebrow-tag" style={{ marginBottom: '12px' }}>
                   <Target size={14} />
                   <span>Skills & Capabilities</span>
@@ -354,7 +353,7 @@ export const CourseDetailPage: React.FC = () => {
 
             {/* Curriculum Breakdown */}
             {course.curriculum && course.curriculum.length > 0 && (
-              <Card style={{ padding: '32px' }}>
+              <Card className="responsive-card-padding">
                 <div className="eyebrow-tag" style={{ marginBottom: '12px' }}>
                   <BookOpen size={14} />
                   <span>Detailed Curriculum</span>
@@ -405,7 +404,7 @@ export const CourseDetailPage: React.FC = () => {
           {/* Sidebar Column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Quick Facts Card */}
-            <Card style={{ padding: '32px' }}>
+            <Card className="responsive-card-padding">
               <h3 style={{ color: '#fff', fontSize: '18px', fontWeight: 700, marginBottom: '20px' }}>
                 Course Information
               </h3>

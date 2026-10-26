@@ -72,6 +72,10 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-replace_with_random_64char_hex_session_secret}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:80,https://marsnova.in}
       WHATSAPP_NUMBER: ${WHATSAPP_NUMBER:-917208591595}
+      # First-admin bootstrap (see DEPLOYMENT.md). Leave unset after the first admin exists.
+      MARSNOVA_BOOTSTRAP_ADMIN_EMAIL: ${MARSNOVA_BOOTSTRAP_ADMIN_EMAIL:-}
+      MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD: ${MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD:-}
+      MARSNOVA_BOOTSTRAP_ADMIN_NAME: ${MARSNOVA_BOOTSTRAP_ADMIN_NAME:-}
     volumes:
       - backend_uploads:/app/uploads
     networks:

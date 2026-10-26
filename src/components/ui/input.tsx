@@ -29,16 +29,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             : undefined
         }
         className={cn(
-          'flex h-10 w-full rounded-md border border-[var(--border-color,#101B2B)] bg-[var(--surface-card,#080F1D)] px-3 py-2 text-sm text-[var(--text-main,#F5F7FF)] shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-[var(--text-dim,#64748B)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)] disabled:cursor-not-allowed disabled:opacity-50',
-          hasError && 'border-red-500 focus-visible:ring-red-500',
+          // `ui-input` carries the real styling (see "shadcn-style primitives" in index.css); the Tailwind
+          // utilities after it are kept for a future Tailwind setup and do nothing today.
+          'ui-input flex h-10 w-full rounded-md border border-[var(--border-color,#101B2B)] bg-[var(--surface-card,#080F1D)] px-3 py-2 text-sm text-[var(--text-main,#F5F7FF)] shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-[var(--text-dim,#64748B)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)] disabled:cursor-not-allowed disabled:opacity-50',
+          hasError && 'ui-input-error border-red-500 focus-visible:ring-red-500',
           className
         )}
-        style={{
-          backgroundColor: 'var(--surface-card, #080F1D)',
-          borderColor: hasError ? '#ef4444' : 'var(--border-color, #101B2B)',
-          color: 'var(--text-main, #F5F7FF)',
-          ...props.style
-        }}
         {...props}
       />
     );

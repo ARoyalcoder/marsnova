@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Play, ArrowRight, ChevronRight } from 'lucide-react';
+import { Play, ArrowRight, ChevronRight, Search, X } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { PageTransition } from '../components/animations/PageTransition';
 import { workPortfolioData } from '../data';
@@ -24,6 +24,7 @@ const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
 
 export const PortfolioPage: React.FC<PortfolioPageProps> = ({ onOpenVideo }) => {
   const [activeTab, setActiveTab] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [items, setItems] = useState<WorkItem[]>(workPortfolioData);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +77,18 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ onOpenVideo }) => 
   const tabs = ['All', 'YouTube Videos', 'Shorts', 'Business Promotion', 'Social Media'];
   const shouldReduceMotion = useReducedMotion();
 
+  const filteredItems = items.filter((item) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      item.title.toLowerCase().includes(q) ||
+      item.tag.toLowerCase().includes(q) ||
+      (item.client && item.client.toLowerCase().includes(q)) ||
+      (item.outcome && item.outcome.toLowerCase().includes(q)) ||
+      (item.summary && item.summary.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <PageTransition>
       <PageContainer
@@ -83,20 +96,77 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ onOpenVideo }) => 
         title="Our Work"
         subtitle="Some of our recent video projects, promotions, channel transformations and creative work."
       >
-        {/* Category Tabs */}
-        <div className="filter-tabs" role="tablist" aria-label="Portfolio Categories">
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              className={`filter-tab ${activeTab === tab ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab}
-            </button>
-          ))}
+        {/* Dynamic Search & Category Filter Controls */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '840px', margin: '0 auto 36px' }}>
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              background: 'var(--bg-deep)',
+              border: '1px solid var(--border-highlight)',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+            }}
+          >
+            <Search size={18} style={{ color: 'var(--cyan-accent)', marginRight: '10px', flexShrink: 0 }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search case studies by title, client, niche, or key metrics (e.g. YouTube, Tech, FinTech)..."
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                fontSize: '14px',
+                width: '100%',
+                outline: 'none'
+              }}
+              aria-label="Search portfolio case studies"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-dim)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                aria-label="Clear portfolio search"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            {/* Category Tabs */}
+            <div className="filter-tabs" role="tablist" aria-label="Portfolio Categories" style={{ margin: 0 }}>
+              {tabs.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  className={`filter-tab ${activeTab === tab ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+              Showing <strong style={{ color: 'var(--cyan-accent)' }}>{filteredItems.length}</strong> of {items.length} projects
+            </span>
+          </div>
         </div>
 
         {/* Error State with explicit Retry action (no silent fallback in production) */}
@@ -121,21 +191,28 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ onOpenVideo }) => 
               </div>
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : filteredItems.length === 0 ? (
           /* Empty State when filter has no matches */
           <EmptyState
             title="No case studies found"
-            description={`No creative projects match the category "${activeTab}".`}
+            description={
+              searchQuery
+                ? `No projects matched "${searchQuery}" in ${activeTab === 'All' ? 'all categories' : activeTab}.`
+                : `No creative projects match the category "${activeTab}".`
+            }
             action={{
-              label: 'View All Projects',
-              onClick: () => setActiveTab('All')
+              label: searchQuery ? 'Clear Search' : 'View All Projects',
+              onClick: () => {
+                setSearchQuery('');
+                setActiveTab('All');
+              }
             }}
           />
         ) : (
           /* Portfolio Cards Grid */
           <motion.div layout className="cards-grid-4">
             <AnimatePresence mode="popLayout">
-              {items.map((work) => {
+              {filteredItems.map((work) => {
                 const targetSlug = work.slug || work.id;
                 return (
                   <motion.div

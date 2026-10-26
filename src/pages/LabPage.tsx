@@ -20,6 +20,7 @@ import {
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { PageTransition } from '../components/animations/PageTransition';
 import { coursesData } from '../data';
+import { CourseCard } from '../components/CourseCard';
 import { CourseItem } from '../types';
 import { apiClient } from '../api';
 import { Button, Badge, Container, EmptyState, ErrorState, Skeleton } from '../components/ui';
@@ -319,7 +320,7 @@ export const LabPage: React.FC = () => {
             }}
           />
         ) : (
-          <motion.div layout className="cards-grid-3" style={{ marginBottom: '80px' }}>
+          <motion.div layout className="course-cards-grid">
             <AnimatePresence mode="popLayout">
               {courses.map((course) => (
                 <motion.div
@@ -329,125 +330,19 @@ export const LabPage: React.FC = () => {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.96 }}
                   transition={{ duration: 0.22 }}
-                  whileHover={shouldReduceMotion ? undefined : { y: -4 }}
-                  className="course-card"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    height: '100%'
-                  }}
+                  style={{ display: 'flex', flexDirection: 'column' }}
                 >
-                  <div>
-                    {/* Card Header: Icon + Badges */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        marginBottom: '16px'
-                      }}
-                    >
-                      <div className="service-icon-box" style={{ marginBottom: 0 }} aria-hidden="true">
-                        {getIcon(course.icon)}
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <Badge variant="cyan">{course.category}</Badge>
-                        <Badge variant="purple">{course.level}</Badge>
-                      </div>
-                    </div>
-
-                    {/* Title & Description */}
-                    <h3 className="service-card-title" style={{ fontSize: '19px', marginBottom: '10px' }}>
-                      <Link
-                        to={`/lab/courses/${course.id}`}
-                        style={{ color: '#fff', textDecoration: 'none' }}
-                        className="card-title-link"
-                      >
-                        {course.title}
-                      </Link>
-                    </h3>
-                    <p className="service-card-desc" style={{ marginBottom: '16px', lineHeight: 1.6 }}>
-                      {course.description}
-                    </p>
-
-                    {/* Duration Metadata */}
-                    {course.duration && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          color: 'var(--text-dim)',
-                          fontSize: '12px',
-                          marginBottom: '16px'
-                        }}
-                      >
-                        <Clock size={13} color="var(--cyan-accent)" />
-                        <span>{course.duration}</span>
-                      </div>
-                    )}
-
-                    {/* Key Learning Outcomes Preview */}
-                    {course.learningOutcomes && course.learningOutcomes.length > 0 && (
-                      <div
-                        style={{
-                          borderTop: '1px solid var(--border-muted)',
-                          paddingTop: '12px',
-                          marginBottom: '16px'
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            color: 'var(--text-dim)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            fontWeight: 700,
-                            display: 'block',
-                            marginBottom: '8px'
-                          }}
-                        >
-                          Core Skills:
-                        </span>
-                        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {course.learningOutcomes.slice(0, 2).map((outcome, idx) => (
-                            <li
-                              key={idx}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                gap: '6px',
-                                fontSize: '12px',
-                                color: 'var(--text-muted)',
-                                lineHeight: 1.4
-                              }}
-                            >
-                              <CheckCircle2 size={13} color="var(--purple-glow)" style={{ flexShrink: 0, marginTop: '2px' }} />
-                              <span>{outcome}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions Row */}
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-muted)' }}>
-                    <Link to={`/lab/courses/${course.id}`} style={{ flex: 1, textDecoration: 'none' }}>
-                      <Button variant="secondary" size="sm" fullWidth rightIcon={<ArrowRight size={14} />}>
-                        Course Details
-                      </Button>
-                    </Link>
-                    <Link
-                      to={`/contact?service=${encodeURIComponent(course.title)}`}
-                      style={{ textDecoration: 'none' }}
-                    >
-                      <Button variant="outline" size="sm" title="Enquire about this course">
-                        Enquire
-                      </Button>
-                    </Link>
-                  </div>
+                  <CourseCard
+                    title={course.title}
+                    description={course.description}
+                    icon={course.icon}
+                    category={course.category}
+                    level={course.level}
+                    duration={course.duration}
+                    skills={course.learningOutcomes}
+                    detailsTo={`/lab/courses/${course.slug || course.id}`}
+                    enquireTo={`/contact?service=${encodeURIComponent(course.title)}`}
+                  />
                 </motion.div>
               ))}
             </AnimatePresence>

@@ -82,9 +82,10 @@ export const PenDriveRecoveryPage: React.FC<PenDriveRecoveryPageProps> = ({ onOp
     damage_type: 'logical_format',
     symptoms: '',
     critical_files_description: '',
-    consent_diagnostic: true,
+    // Authorizations and terms must be ticked by the customer; none of them start ticked.
+    consent_diagnostic: false,
     consent_nand_risk: false,
-    terms_accepted: true,
+    terms_accepted: false,
     delivery_method: 'counter_dropoff'
   });
 
@@ -218,7 +219,7 @@ export const PenDriveRecoveryPage: React.FC<PenDriveRecoveryPageProps> = ({ onOp
           {/* Scope Boundaries & Guardrails Banner */}
           <div style={{ background: 'rgba(255, 170, 0, 0.08)', border: '1px solid rgba(255, 170, 0, 0.25)', borderRadius: '12px', padding: '16px 20px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
             <ShieldCheck size={24} color="#ffaa00" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--text-white)' }}>
+            <div style={{ fontSize: '13px', lineHeight: 1.6, color: 'var(--text-white)', flex: 1 }}>
               <strong>Laboratory Standards & Data Protection Policy:</strong>
               <div style={{ marginTop: '4px', color: 'var(--text-muted)' }}>
                 • <strong>In-Lab Physical Diagnostics:</strong> All evaluations are performed inside anti-static cleanroom workstations using hardware readout equipment. We never execute browser-driven WebUSB recovery.
@@ -235,7 +236,7 @@ export const PenDriveRecoveryPage: React.FC<PenDriveRecoveryPageProps> = ({ onOp
             Laboratory Chain of Custody & Recovery Process
           </h2>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+          <div className="recovery-steps-grid">
             {[
               { step: '01', title: 'Intake Registration', desc: 'Register symptoms and generate unique Case Reference code.' },
               { step: '02', title: 'Physical Receipt', desc: 'Anti-static logging and barcode custody tagging at lab.' },
@@ -260,7 +261,7 @@ export const PenDriveRecoveryPage: React.FC<PenDriveRecoveryPageProps> = ({ onOp
         </div>
 
         {/* Primary Interactive Work Area: Laboratory Intake Registration */}
-        <Card className="contact-card" style={{ padding: '32px' }}>
+        <Card className="contact-card responsive-card-padding">
           <div style={{ marginBottom: '24px', borderBottom: '1px solid var(--border-muted)', paddingBottom: '16px' }}>
             <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', margin: 0 }}>
               Laboratory Intake Registration Form
@@ -423,7 +424,7 @@ export const PenDriveRecoveryPage: React.FC<PenDriveRecoveryPageProps> = ({ onOp
                         <HardDrive size={18} /> 2. Device Specifications
                       </h3>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="responsive-form-row">
                         <div>
                           <label htmlFor="recovery-device-brand" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-white)', marginBottom: '6px' }}>
                             Device Brand *
@@ -481,7 +482,7 @@ export const PenDriveRecoveryPage: React.FC<PenDriveRecoveryPageProps> = ({ onOp
                         />
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="responsive-form-row">
                         <div>
                           <label htmlFor="recovery-file-system" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-white)', marginBottom: '6px' }}>
                             File System

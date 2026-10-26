@@ -1,10 +1,10 @@
 #include "EnquiryController.h"
 #include <drogon/drogon.h>
-#include <regex>
+#include "../utils/Security.h"
+#include "../utils/Validation.h"
 
 static bool isValidEmail(const std::string &email) {
-    const std::regex pattern(R"((\w+)(\.{1}\w+)*@(\w+)(\.{1}\w+)+)");
-    return std::regex_match(email, pattern);
+    return Validation::isValidEmail(email);
 }
 
 void EnquiryController::createEnquiry(const drogon::HttpRequestPtr &req,
@@ -131,14 +131,15 @@ void EnquiryController::createEnquiry(const drogon::HttpRequestPtr &req,
         },
         [callback, reqId](const drogon::orm::DrogonDbException &e) {
             Json::Value err;
-            err["error"] = "Database error: " + std::string(e.base().what());
+            std::cerr << "[MarsNova] Database error: " << e.base().what() << std::endl;
+            err["error"] = "Database error. Please try again shortly.";
             err["code"] = "DATABASE_ERROR";
             if (!reqId.empty()) err["request_id"] = reqId;
             auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
             resp->setStatusCode(drogon::k500InternalServerError);
             callback(resp);
         },
-        name, email, phone, service, message, req->peerAddr().toIp()
+        name, email, phone, service, message, Security::resolveClientIp(req->peerAddr().toIp(), req->getHeader("X-Real-IP"), req->getHeader("X-Forwarded-For"))
     );
 }
 
@@ -185,7 +186,8 @@ void EnquiryController::listEnquiries(const drogon::HttpRequestPtr &req,
         },
         [callback, reqId](const drogon::orm::DrogonDbException &e) {
             Json::Value err;
-            err["error"] = "Query execution failed: " + std::string(e.base().what());
+            std::cerr << "[MarsNova] Query execution failed: " << e.base().what() << std::endl;
+            err["error"] = "Query execution failed. Please try again shortly.";
             err["code"] = "DATABASE_ERROR";
             if (!reqId.empty()) err["request_id"] = reqId;
             auto resp = drogon::HttpResponse::newHttpJsonResponse(err);

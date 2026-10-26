@@ -84,7 +84,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       {(label || showPercentage) && (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>
           {label && <span>{label}</span>}
-          {showPercentage && <span>{clamped}%</span>}
+          {showPercentage && <span>{Math.round(clamped * 10) / 10}%</span>}
         </div>
       )}
       <div
@@ -143,6 +143,8 @@ export interface EmptyStateProps extends HTMLAttributes<HTMLDivElement> {
   icon?: React.ReactNode;
   title: string;
   description: string;
+  /** Heading level of the title. Use 1 when the empty state is the whole page (e.g. "not found"). */
+  headingLevel?: 1 | 2 | 3 | 4;
   action?: {
     label: string;
     onClick: () => void;
@@ -153,17 +155,19 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   icon,
   title,
   description,
+  headingLevel = 3,
   action,
   className = '',
   style,
   ...props
 }) => {
+  const Heading = `h${headingLevel}` as 'h1' | 'h2' | 'h3' | 'h4';
   return (
     <div className={`empty-state-card ${className}`.trim()} style={style} {...props}>
       <div className="empty-state-icon" aria-hidden="true">
         {icon || <FolderOpen size={24} />}
       </div>
-      <h3 className="empty-state-title">{title}</h3>
+      <Heading className="empty-state-title">{title}</Heading>
       <p className="empty-state-desc">{description}</p>
       {action && (
         <Button variant="primary" size="sm" onClick={action.onClick}>

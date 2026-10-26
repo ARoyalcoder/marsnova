@@ -10,7 +10,9 @@ import {
   HardDrive,
   Headphones,
   ChevronRight,
-  ArrowRight
+  ArrowRight,
+  Search,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { PageTransition } from '../components/animations/PageTransition';
@@ -20,6 +22,7 @@ import { apiClient } from '../api';
 import { Button, Card, Badge, EmptyState, ErrorState, Skeleton } from '../components/ui';
 import { PageContainer } from '../components/PageContainer';
 import { SharedCTA } from '../components/SharedCTA';
+import { ServiceCard } from '../components/ServiceCard';
 import { usePageSEO } from '../utils/seo';
 
 interface ServicesPageProps {
@@ -28,6 +31,7 @@ interface ServicesPageProps {
 
 export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenRecoveryTracker }) => {
   const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [services, setServices] = useState<ServiceItem[]>(servicesData);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +114,17 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenRecoveryTracke
 
   const shouldReduceMotion = useReducedMotion();
 
+  const filteredServices = services.filter((service) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      service.title.toLowerCase().includes(q) ||
+      service.description.toLowerCase().includes(q) ||
+      (service.badge && service.badge.toLowerCase().includes(q)) ||
+      (service.category && service.category.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <PageTransition>
       <PageContainer
@@ -117,19 +132,78 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenRecoveryTracke
         title="Our Services"
         subtitle="Complete solutions for creators, businesses and tech users"
       >
-        {/* Category Filter Tabs */}
-        <div className="filter-tabs" role="tablist" aria-label="Service categories">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              role="tab"
-              aria-selected={activeCategory === cat}
-              className={`filter-tab ${activeCategory === cat ? 'active' : ''}`}
-              onClick={() => setActiveCategory(cat)}
-            >
-              {cat}
-            </button>
-          ))}
+        {/* Dynamic Search & Category Filter Controls */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '840px', margin: '0 auto 36px' }}>
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              background: 'var(--bg-deep)',
+              border: '1px solid var(--border-highlight)',
+              borderRadius: '12px',
+              padding: '8px 16px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
+            }}
+          >
+            <Search size={18} style={{ color: 'var(--cyan-accent)', marginRight: '10px', flexShrink: 0 }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search services by keyword, format, or category (e.g. video, recovery, shorts)..."
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                fontSize: '14px',
+                width: '100%',
+                outline: 'none'
+              }}
+              aria-label="Search services"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-dim)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                aria-label="Clear service search"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            {/* Category Filter Tabs */}
+            <div className="filter-tabs" role="tablist" aria-label="Service categories" style={{ margin: 0 }}>
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  role="tab"
+                  aria-selected={activeCategory === cat}
+                  className={`filter-tab ${activeCategory === cat ? 'active' : ''}`}
+                  onClick={() => setActiveCategory(cat)}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                Showing <strong style={{ color: 'var(--cyan-accent)' }}>{filteredServices.length}</strong> of {services.length} services
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Error State with explicit Retry action (no silent fallback in production) */}
@@ -159,21 +233,28 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenRecoveryTracke
               </div>
             ))}
           </div>
-        ) : services.length === 0 ? (
-          /* Empty State when no services match filter */
+        ) : filteredServices.length === 0 ? (
+          /* Empty State when no services match filter or search query */
           <EmptyState
             title="No services found"
-            description={`There are currently no services listed under the "${activeCategory}" category.`}
+            description={
+              searchQuery
+                ? `No services matched "${searchQuery}" in ${activeCategory === 'All' ? 'any category' : activeCategory}.`
+                : `There are currently no services listed under the "${activeCategory}" category.`
+            }
             action={{
-              label: 'View All Services',
-              onClick: () => setActiveCategory('All')
+              label: searchQuery ? 'Clear Search' : 'View All Services',
+              onClick: () => {
+                setSearchQuery('');
+                setActiveCategory('All');
+              }
             }}
           />
         ) : (
           /* 8-Card Reusable Services Grid */
-          <motion.div layout className="cards-grid-4">
+          <motion.div layout className="service-cards-grid">
             <AnimatePresence mode="popLayout">
-              {services.map((service) => {
+              {filteredServices.map((service) => {
                 const targetSlug = service.slug || service.id;
                 return (
                   <motion.div
@@ -183,45 +264,16 @@ export const ServicesPage: React.FC<ServicesPageProps> = ({ onOpenRecoveryTracke
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.96 }}
                     transition={{ duration: 0.22 }}
-                    whileHover={shouldReduceMotion ? undefined : { y: -4 }}
-                    className="service-card"
+                    style={{ display: 'flex', flexDirection: 'column' }}
                   >
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div className="service-icon-box">
-                          {getIcon(service.icon)}
-                        </div>
-                        <Badge variant={targetSlug === 'pen-drive-data-recovery' ? 'cyan' : 'purple'}>
-                          {service.badge || service.category}
-                        </Badge>
-                      </div>
-
-                      <h3 className="service-card-title">
-                        <Link to={`/services/${targetSlug}`} style={{ color: 'inherit' }}>
-                          {service.title}
-                        </Link>
-                      </h3>
-                      <p className="service-card-desc">{service.description}</p>
-                    </div>
-
-                    <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Link
-                          to={`/services/${targetSlug}`}
-                          className="card-link"
-                          aria-label={`View details for ${service.title}`}
-                        >
-                          Details <ChevronRight size={14} />
-                        </Link>
-                        <Link
-                          to={`/contact?service=${encodeURIComponent(service.title)}`}
-                          style={{ fontSize: '12px', color: 'var(--purple-glow)', fontWeight: 600 }}
-                          aria-label={`Enquire about ${service.title}`}
-                        >
-                          Enquire ↗
-                        </Link>
-                      </div>
-                    </div>
+                    <ServiceCard
+                      title={service.title}
+                      description={service.description}
+                      icon={service.icon}
+                      badge={service.badge || service.category}
+                      detailsTo={`/services/${targetSlug}`}
+                      enquireTo={`/contact?service=${encodeURIComponent(service.title)}`}
+                    />
                   </motion.div>
                 );
               })}

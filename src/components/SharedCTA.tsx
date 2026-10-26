@@ -21,11 +21,11 @@ export const SharedCTA: React.FC<SharedCTAProps> = ({
       <Container>
         <Card
           variant="glow"
+          className="responsive-card-padding"
           style={{
             background: 'linear-gradient(135deg, rgba(121, 25, 245, 0.22) 0%, rgba(8, 15, 29, 0.95) 100%)',
             border: '1px solid var(--purple-glow)',
             borderRadius: 'var(--radius-xl)',
-            padding: '48px',
             position: 'relative',
             overflow: 'hidden'
           }}
@@ -59,7 +59,7 @@ export const SharedCTA: React.FC<SharedCTAProps> = ({
                 <Sparkles size={14} />
                 <span>Next-Gen Creation & Tech</span>
               </div>
-              <h2 style={{ color: '#fff', fontSize: '32px', fontWeight: 800, lineHeight: 1.2, marginBottom: '12px' }}>
+              <h2 style={{ color: '#fff', fontSize: 'clamp(24px, 5vw, 32px)', fontWeight: 800, lineHeight: 1.2, marginBottom: '12px' }}>
                 {title}
               </h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: 1.6 }}>

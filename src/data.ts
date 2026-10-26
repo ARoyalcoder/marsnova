@@ -267,6 +267,9 @@ export const coursesData: CourseItem[] = [
   },
   {
     id: 'video-editing-course',
+    // The backend (and the course page route) call this course "video-editing". The id stays
+    // because HomePage keys its icon on it, but links must use the slug.
+    slug: 'video-editing',
     title: 'Video Editing',
     category: 'Creative Production',
     description: 'Edit YouTube videos, vertical reels, pacing, sound design, colour grading and transitions.',

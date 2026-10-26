@@ -3,10 +3,20 @@
 #include <sstream>
 #include <iomanip>
 #include <vector>
-#include <random>
 #include <chrono>
 #include <cstring>
 #include <cstdint>
+#include <cstdio>
+#include <stdexcept>
+
+#if defined(_WIN32)
+// RtlGenRandom, exported from advapi32 under this name. Declared here instead of including
+// <windows.h> so this header stays safe to include before <winsock2.h>.
+extern "C" unsigned char __stdcall SystemFunction036(void *buffer, unsigned long length);
+#if defined(_MSC_VER)
+#pragma comment(lib, "advapi32.lib")
+#endif
+#endif
 
 namespace Security {
 
@@ -148,24 +158,44 @@ inline std::string sha256(const std::string &input) {
 }
 
 // -----------------------------------------------------------------------------
-// Cryptographically Strong Random Hex Generator
+// Cryptographically Strong Random Bytes / Hex Generator
 // -----------------------------------------------------------------------------
-inline std::string randomHex(size_t numBytes = 16) {
-    static std::mt19937_64 rng([]() {
-        std::random_device rd;
-        return (static_cast<uint64_t>(rd()) << 32) ^ rd();
-    }());
-
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0');
-    for (size_t i = 0; i < numBytes; i += 8) {
-        uint64_t val = rng();
-        size_t bytesToWrite = std::min<size_t>(8, numBytes - i);
-        for (size_t b = 0; b < bytesToWrite; ++b) {
-            oss << std::setw(2) << (static_cast<unsigned int>((val >> (b * 8)) & 0xff));
+// Reads straight from the operating system's CSPRNG. The previous generator seeded a Mersenne
+// Twister from std::random_device, which is deterministic on MinGW (GCC < 9.2): every restart
+// produced the same session IDs and CSRF tokens. Mersenne Twister output is also recoverable
+// from a few hundred samples, so it is never acceptable for tokens. If the OS source fails this
+// throws rather than falling back to anything weaker.
+inline void fillRandomBytes(uint8_t *out, size_t n) {
+#if defined(_WIN32)
+    while (n > 0) {
+        const unsigned long chunk = n > 65536 ? 65536UL : static_cast<unsigned long>(n);
+        if (!SystemFunction036(out, chunk)) {
+            throw std::runtime_error("operating system random source failed");
         }
+        out += chunk;
+        n -= chunk;
     }
-    return oss.str();
+#else
+    std::FILE *f = std::fopen("/dev/urandom", "rb");
+    if (!f) throw std::runtime_error("cannot open /dev/urandom");
+    const size_t got = std::fread(out, 1, n, f);
+    std::fclose(f);
+    if (got != n) throw std::runtime_error("short read from /dev/urandom");
+#endif
+}
+
+inline std::string randomHex(size_t numBytes = 16) {
+    std::vector<uint8_t> bytes(numBytes);
+    if (numBytes > 0) fillRandomBytes(bytes.data(), bytes.size());
+
+    static const char *digits = "0123456789abcdef";
+    std::string out;
+    out.reserve(numBytes * 2);
+    for (uint8_t b : bytes) {
+        out.push_back(digits[b >> 4]);
+        out.push_back(digits[b & 0x0f]);
+    }
+    return out;
 }
 
 // -----------------------------------------------------------------------------
@@ -186,10 +216,11 @@ inline std::string hashPassword(const std::string &password, std::string salt = 
 inline bool verifyPassword(const std::string &password, const std::string &storedHash) {
     if (storedHash.empty()) return false;
 
-    // Check format: sha256$<salt>$<hash>
+    // Only the salted sha256$<salt>$<hash> format authenticates. There is deliberately no fallback
+    // for plaintext or unsalted values: such a fallback would let anyone who can read a stored
+    // value log in by submitting that value as the password.
     if (storedHash.rfind("sha256$", 0) != 0) {
-        // Fallback for simple legacy sha256 or plain comparison (development mode)
-        return constantTimeEquals(sha256(password), storedHash) || constantTimeEquals(password, storedHash);
+        return false;
     }
 
     size_t firstDollar = storedHash.find('$');
@@ -201,6 +232,83 @@ inline bool verifyPassword(const std::string &password, const std::string &store
     std::string salt = storedHash.substr(firstDollar + 1, secondDollar - firstDollar - 1);
     std::string computed = hashPassword(password, salt);
     return constantTimeEquals(computed, storedHash);
+}
+
+// A valid-format hash of a throwaway password. Verifying against it costs the same as verifying a
+// real account's password, so "unknown email" and "wrong password" take the same time. (The old
+// guard used a malformed hash that skipped the key stretching, so it answered much faster.)
+inline const std::string &dummyPasswordHash() {
+    static const std::string hash = hashPassword("marsnova-dummy-password", "00000000000000000000000000000000");
+    return hash;
+}
+
+// -----------------------------------------------------------------------------
+// Client IP behind a reverse proxy
+// -----------------------------------------------------------------------------
+inline bool isPrivateOrLoopbackIp(const std::string &ip) {
+    std::string v = ip;
+    if (v.size() > 7 && (v.compare(0, 7, "::ffff:") == 0 || v.compare(0, 7, "::FFFF:") == 0)) v = v.substr(7);
+    if (v == "::1") return true;
+
+    unsigned a = 0, b = 0, c = 0, d = 0;
+    char extra = 0;
+    if (std::sscanf(v.c_str(), "%u.%u.%u.%u%c", &a, &b, &c, &d, &extra) == 4 && a < 256 && b < 256 && c < 256 && d < 256) {
+        return a == 127 || a == 10 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31) || (a == 169 && b == 254);
+    }
+
+    // IPv6 unique-local (fc00::/7) and link-local (fe80::/10)
+    auto lower = [](char ch) { return (ch >= 'A' && ch <= 'Z') ? static_cast<char>(ch - 'A' + 'a') : ch; };
+    if (v.size() >= 4 && v.find(':') != std::string::npos) {
+        const char p0 = lower(v[0]), p1 = lower(v[1]), p2 = lower(v[2]);
+        if (p0 == 'f' && (p1 == 'c' || p1 == 'd')) return true;
+        if (p0 == 'f' && p1 == 'e' && (p2 == '8' || p2 == '9' || p2 == 'a' || p2 == 'b')) return true;
+    }
+    return false;
+}
+
+inline bool looksLikeIp(const std::string &s) {
+    if (s.empty() || s.size() > 45) return false;
+    const bool v6 = s.find(':') != std::string::npos;
+    for (char ch : s) {
+        const bool digit = ch >= '0' && ch <= '9';
+        const bool hex = digit || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+        if (v6 ? !(hex || ch == ':' || ch == '.') : !(digit || ch == '.')) return false;
+    }
+    if (v6) return true;
+    unsigned a = 0, b = 0, c = 0, d = 0;
+    char extra = 0;
+    return std::sscanf(s.c_str(), "%u.%u.%u.%u%c", &a, &b, &c, &d, &extra) == 4 && a < 256 && b < 256 && c < 256 && d < 256;
+}
+
+// The address of the real client. Forwarding headers are only believed when the TCP peer is one of
+// our own proxies (a loopback or private address, e.g. the nginx gateway on the private Docker
+// network). A client connecting directly can send any header it likes, so for public peers the
+// socket address wins. Behind nginx the trustworthy values are X-Real-IP (nginx overwrites it with
+// $remote_addr) and the RIGHTMOST X-Forwarded-For hop (what nginx appended); the left side of that
+// header is whatever the client supplied.
+inline std::string resolveClientIp(const std::string &peerIp, const std::string &xRealIp, const std::string &xForwardedFor) {
+    const std::string peer = peerIp.empty() || peerIp == "0.0.0.0" ? std::string("127.0.0.1") : peerIp;
+    if (!isPrivateOrLoopbackIp(peer)) return peer;
+
+    auto trim = [](std::string s) {
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.pop_back();
+        return s;
+    };
+
+    const std::string real = trim(xRealIp);
+    if (looksLikeIp(real)) return real;
+
+    size_t end = xForwardedFor.size();
+    while (end > 0) {
+        const size_t comma = xForwardedFor.rfind(',', end - 1);
+        const size_t start = comma == std::string::npos ? 0 : comma + 1;
+        const std::string hop = trim(xForwardedFor.substr(start, end - start));
+        if (!hop.empty()) return looksLikeIp(hop) ? hop : peer;
+        if (comma == std::string::npos) break;
+        end = comma;
+    }
+    return peer;
 }
 
 } // namespace Security

@@ -1,57 +1,90 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Send,
+  User,
   Mail,
-  Instagram,
-  MessageCircle,
-  MapPin,
+  Phone,
+  LayoutGrid,
+  ChevronDown,
+  FileText,
   ArrowRight,
+  Check,
   CheckCircle2,
-  Briefcase,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  ChevronRight,
+  Instagram,
+  MapPin
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PageTransition } from '../components/animations/PageTransition';
-import { fadeInUp } from '../animations/variants';
 import { submitEnquiry, validateEnquiryPayload, EnquirySubmissionResult } from '../api';
 import {
-  Button,
-  Input,
-  NativeSelect,
-  Textarea,
-  Card,
-  ErrorState,
-  Container,
-  Badge,
   toast,
-  FieldGroup,
   Field,
   FieldLabel,
-  FieldDescription,
   FieldError,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupText,
-  InputGroupTextarea
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue
 } from '../components/ui';
-import { BugReportForm } from '../components/BugReportForm';
 import { usePageSEO } from '../utils/seo';
+
+/**
+ * Authentic WhatsApp Vector Logo
+ */
+const WhatsAppLogo: React.FC<{ size?: number; color?: string; className?: string }> = ({
+  size = 20,
+  color = 'currentColor',
+  className
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    style={{ color, flexShrink: 0 }}
+    aria-hidden="true"
+  >
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.456 5.711 1.457h.005c6.554 0 11.89-5.335 11.893-11.893a11.82 11.82 0 00-3.48-8.413z" />
+  </svg>
+);
+
+/**
+ * Filled Paper Plane Icon
+ */
+const PaperPlaneIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = '#FFFFFF' }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill={color}
+    aria-hidden="true"
+    style={{ transform: 'rotate(-5deg) translate(1px, -1px)' }}
+  >
+    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+  </svg>
+);
 
 export const ContactPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const prefilledService = searchParams.get('service') || '';
 
-  const [formMode, setFormMode] = useState<'enquiry' | 'bug'>(
-    searchParams.get('tab') === 'bug' || searchParams.get('mode') === 'bug' ? 'bug' : 'enquiry'
-  );
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     service: prefilledService,
     message: '',
-    consent: true
+    // Consent starts unticked as required for privacy consent compliance
+    consent: false
   });
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -60,7 +93,7 @@ export const ContactPage: React.FC = () => {
   const [submissionResult, setSubmissionResult] = useState<EnquirySubmissionResult | null>(null);
   const [errorNotice, setErrorNotice] = useState<string>('');
 
-  // Refs for keyboard focus management
+  // Refs for programmatic keyboard focus management
   const nameRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
@@ -174,7 +207,7 @@ export const ContactPage: React.FC = () => {
         phone: '',
         service: '',
         message: '',
-        consent: true
+        consent: false
       });
       setTouched({});
     } catch (err: any) {
@@ -197,411 +230,584 @@ export const ContactPage: React.FC = () => {
       phone: '',
       service: '',
       message: '',
-      consent: true
+      consent: false
     });
   };
 
+  // WhatsApp quick text draft
+  const defaultWhatsAppText =
+    "Hi, I'm interested in your services. Please share more details.";
+
+  const dynamicWhatsAppText =
+    formData.name.trim() || formData.service || formData.message.trim()
+      ? `Hi MarsNova!\nMy name is ${formData.name.trim() || 'A Client'}.\nService: ${
+          formData.service || 'Creative / Technical Service'
+        }\n${formData.phone ? `Phone: ${formData.phone}\n` : ''}Message: ${
+          formData.message.trim() || 'I would like to discuss a project with MarsNova.'
+        }`
+      : defaultWhatsAppText;
+
   return (
     <PageTransition>
-      <div style={{ padding: '60px 0 80px' }}>
-      <Container>
-        <div className="section-header">
-          <h1 className="section-title">
-            Contact <span className="gradient-text">MarsNova</span>
-          </h1>
-          <p className="section-subtitle">
-            Have a question, creative brief, or course inquiry? We're here to help.
-          </p>
-        </div>
+      <div className="contact-page-wrapper">
+        {/* Ambient subtle backdrops */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '-8%',
+            left: '-4%',
+            width: '450px',
+            height: '450px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0) 70%)',
+            pointerEvents: 'none'
+          }}
+          aria-hidden="true"
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '4%',
+            right: '-5%',
+            width: '520px',
+            height: '520px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(0, 102, 255, 0.08) 0%, rgba(0, 102, 255, 0) 70%)',
+            pointerEvents: 'none'
+          }}
+          aria-hidden="true"
+        />
 
-        <div className="contact-grid">
-          {/* Left Column: Form & Feedback UI */}
-          <Card className="contact-card" style={{ padding: '36px' }}>
-            <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>
-              {formMode === 'bug' ? 'Report a Bug' : 'Send Us an Enquiry'}
-            </h2>
-
-            {/* Form Mode Tabs: Project Enquiry vs Bug Report */}
-            <div
-              style={{
-                display: 'flex',
-                gap: '8px',
-                marginBottom: '24px',
-                background: 'var(--surface-card, #080F1D)',
-                padding: '4px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color, #101B2B)'
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setFormMode('enquiry')}
-                className={`btn btn-sm ${formMode === 'enquiry' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ flex: 1, padding: '8px 12px', fontSize: '13px', borderRadius: '6px' }}
-              >
-                Project Enquiry
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormMode('bug')}
-                className={`btn btn-sm ${formMode === 'bug' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ flex: 1, padding: '8px 12px', fontSize: '13px', borderRadius: '6px' }}
-              >
-                Report a Bug
-              </button>
+        <div className="contact-main-grid">
+          {/* =============================================================
+              Left Column: "Send an Enquiry" Card
+              ============================================================= */}
+          <div className="contact-enquiry-card">
+            {/* Blue Paper Plane Icon Badge */}
+            <div className="contact-paperplane-icon" aria-hidden="true">
+              <PaperPlaneIcon size={24} color="#FFFFFF" />
             </div>
 
-            {formMode === 'bug' ? (
-              <BugReportForm className="w-full" onCancel={() => setFormMode('enquiry')} />
-            ) : (
-              <>
-                {/* Error Banner */}
-                {errorNotice && (
-                  <ErrorState
-                    title="Submission Alert"
-                    message={errorNotice}
-                    style={{ marginBottom: '24px' }}
-                  />
-                )}
+            {/* Title & Subtitle */}
+            <h1 className="contact-card-title">
+              Send an <span style={{ color: '#0066FF' }}>Enquiry</span>
+            </h1>
+            <p className="contact-card-subtitle">
+              Share your project details and we'll get back to you.
+            </p>
 
-                {/* Success or Offline-Queued State Notice */}
-                {submissionResult ? (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '20px',
-                  padding: '24px',
-                  borderRadius: 'var(--radius-lg)',
-                  background:
-                    submissionResult.status === 'saved_to_server'
-                      ? 'rgba(34, 197, 94, 0.08)'
-                      : 'rgba(245, 158, 11, 0.08)',
-                  border:
-                    submissionResult.status === 'saved_to_server'
-                      ? '1px solid rgba(34, 197, 94, 0.3)'
-                      : '1px solid rgba(245, 158, 11, 0.3)'
-                }}
-                role="status"
-                aria-live="polite"
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  {submissionResult.status === 'saved_to_server' ? (
-                    <CheckCircle2 size={24} color="#22c55e" />
-                  ) : (
-                    <AlertTriangle size={24} color="#f59e0b" />
-                  )}
-                  <div>
-                    <h3 style={{ color: '#fff', fontSize: '17px', fontWeight: 700 }}>
-                      {submissionResult.status === 'saved_to_server'
-                        ? 'Enquiry Recorded Successfully'
-                        : 'Enquiry Buffered Locally'}
-                    </h3>
-                    {submissionResult.enquiryId && (
-                      <Badge variant={submissionResult.status === 'saved_to_server' ? 'success' : 'purple'}>
-                        Ref: {submissionResult.enquiryId}
-                      </Badge>
-                    )}
+            <AnimatePresence mode="wait">
+              {submissionResult ? (
+                <motion.div
+                  key="submission-result"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  transition={{ duration: 0.25 }}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                    padding: '28px',
+                    borderRadius: '20px',
+                    background:
+                      submissionResult.status === 'saved_to_server'
+                        ? 'rgba(34, 197, 94, 0.08)'
+                        : 'rgba(245, 158, 11, 0.08)',
+                    border:
+                      submissionResult.status === 'saved_to_server'
+                        ? '1.5px solid rgba(34, 197, 94, 0.35)'
+                        : '1.5px solid rgba(245, 158, 11, 0.35)'
+                  }}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '50%',
+                        background:
+                          submissionResult.status === 'saved_to_server'
+                            ? 'rgba(34, 197, 94, 0.16)'
+                            : 'rgba(245, 158, 11, 0.16)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}
+                    >
+                      {submissionResult.status === 'saved_to_server' ? (
+                        <CheckCircle2 size={24} color="#22C55E" />
+                      ) : (
+                        <AlertTriangle size={24} color="#F59E0B" />
+                      )}
+                    </div>
+                    <div>
+                      <h3
+                        style={{
+                          color: '#0F172A',
+                          fontSize: '18px',
+                          fontWeight: 700,
+                          margin: 0
+                        }}
+                      >
+                        {submissionResult.status === 'saved_to_server'
+                          ? 'Enquiry Recorded Successfully'
+                          : 'Enquiry Buffered Locally'}
+                      </h3>
+                      {submissionResult.enquiryId && (
+                        <div style={{ marginTop: '5px' }}>
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              background: '#EFF6FF',
+                              color: '#0066FF',
+                              padding: '2px 8px',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            Ref: {submissionResult.enquiryId}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                <p style={{ color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1.6 }}>
-                  {submissionResult.message}
-                </p>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                  <a
-                    href={submissionResult.whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-primary"
+                  <p
                     style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      textDecoration: 'none'
+                      color: '#475569',
+                      fontSize: '14px',
+                      lineHeight: 1.6,
+                      margin: 0
                     }}
                   >
-                    <MessageCircle size={18} />
-                    <span>Open WhatsApp Chat</span>
-                  </a>
+                    {submissionResult.message}
+                  </p>
 
-                  <Button variant="outline" size="md" onClick={handleResetForm} leftIcon={<RotateCcw size={16} />}>
-                    Send Another Enquiry
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="contact-form" noValidate>
-                <FieldGroup>
-                  <Field data-invalid={Boolean(fieldErrors.name)}>
-                    <FieldLabel htmlFor="contact-name">
-                      Full Name <span style={{ color: '#ef4444' }}>*</span>
-                    </FieldLabel>
-                    <Input
-                      ref={nameRef}
-                      id="contact-name"
-                      name="name"
-                      required
-                      placeholder="e.g. Aarav Sharma"
-                      value={formData.name}
-                      aria-invalid={Boolean(fieldErrors.name)}
-                      error={fieldErrors.name}
-                      onChange={(e) => handleChange('name', e.target.value)}
-                      onBlur={() => handleBlur('name')}
-                    />
-                    {fieldErrors.name && (
-                      <FieldError errors={[{ message: fieldErrors.name }]} />
-                    )}
-                  </Field>
-
-                  <Field data-invalid={Boolean(fieldErrors.email)}>
-                    <FieldLabel htmlFor="contact-email">
-                      Email Address <span style={{ color: '#ef4444' }}>*</span>
-                    </FieldLabel>
-                    <Input
-                      ref={emailRef}
-                      id="contact-email"
-                      name="email"
-                      type="email"
-                      required
-                      placeholder="e.g. aarav@example.com"
-                      value={formData.email}
-                      aria-invalid={Boolean(fieldErrors.email)}
-                      error={fieldErrors.email}
-                      onChange={(e) => handleChange('email', e.target.value)}
-                      onBlur={() => handleBlur('email')}
-                    />
-                    {fieldErrors.email && (
-                      <FieldError errors={[{ message: fieldErrors.email }]} />
-                    )}
-                  </Field>
-
-                  <Field data-invalid={Boolean(fieldErrors.phone)}>
-                    <FieldLabel htmlFor="contact-phone">
-                      Phone / WhatsApp Number (Optional)
-                    </FieldLabel>
-                    <Input
-                      ref={phoneRef}
-                      id="contact-phone"
-                      name="phone"
-                      type="tel"
-                      placeholder="+91 98765 43210"
-                      value={formData.phone}
-                      aria-invalid={Boolean(fieldErrors.phone)}
-                      error={fieldErrors.phone}
-                      onChange={(e) => handleChange('phone', e.target.value)}
-                      onBlur={() => handleBlur('phone')}
-                    />
-                    <FieldDescription>
-                      Optional — used for WhatsApp updates and direct project coordination.
-                    </FieldDescription>
-                    {fieldErrors.phone && (
-                      <FieldError errors={[{ message: fieldErrors.phone }]} />
-                    )}
-                  </Field>
-
-                  <Field data-invalid={Boolean(fieldErrors.service)}>
-                    <FieldLabel htmlFor="contact-service">
-                      Service or Course Interest <span style={{ color: '#ef4444' }}>*</span>
-                    </FieldLabel>
-                    <NativeSelect
-                      ref={serviceRef}
-                      id="contact-service"
-                      name="service"
-                      required
-                      value={formData.service}
-                      error={fieldErrors.service}
-                      onChange={(e) => handleChange('service', e.target.value)}
-                      onBlur={() => handleBlur('service')}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '6px' }}>
+                    <a
+                      href={submissionResult.whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        textDecoration: 'none',
+                        padding: '11px 20px',
+                        borderRadius: '12px',
+                        fontWeight: 600,
+                        background: '#00B050',
+                        color: '#FFFFFF'
+                      }}
                     >
-                      <option value="">Select a service or course interest...</option>
-                      <optgroup label="Creative & Technical Services">
-                        <option value="Topic to Video">Topic to Video</option>
-                        <option value="Video Editing">Video Editing</option>
-                        <option value="Video to Shorts">Video to Shorts</option>
-                        <option value="Thumbnail & Title Design">Thumbnail & Title Design</option>
-                        <option value="Social Media Consultation">Social Media Consultation</option>
-                        <option value="Business Promotion">Business Promotion</option>
-                        <option value="Pen Drive Data Recovery">Pen Drive Data Recovery</option>
-                        <option value="Online Tech Support">Online Tech Support</option>
-                      </optgroup>
-                      <optgroup label="MarsNova Lab Courses">
-                        <option value="Computer Fundamentals">Computer Fundamentals</option>
-                        <option value="AI Tools & Automation">AI Tools & Automation</option>
-                        <option value="Video Editing Bootcamp">Video Editing Bootcamp</option>
-                        <option value="Graphic Design">Graphic Design</option>
-                        <option value="Social Media Growth">Social Media Growth</option>
-                        <option value="Practical Projects">Practical Projects</option>
-                      </optgroup>
-                      <optgroup label="General">
-                        <option value="Custom Project / Other">Custom Project / Other</option>
-                      </optgroup>
-                    </NativeSelect>
-                    {fieldErrors.service && (
-                      <FieldError errors={[{ message: fieldErrors.service }]} />
-                    )}
-                  </Field>
+                      <WhatsAppLogo size={18} color="#FFFFFF" />
+                      <span>Open WhatsApp Chat</span>
+                    </a>
 
-                  <Field data-invalid={Boolean(fieldErrors.message)}>
-                    <FieldLabel htmlFor="contact-message">
-                      Project Details or Question <span style={{ color: '#ef4444' }}>*</span>
-                    </FieldLabel>
-                    <InputGroup data-invalid={Boolean(fieldErrors.message)}>
-                      <InputGroupTextarea
-                        ref={messageRef}
-                        id="contact-message"
-                        name="message"
-                        rows={4}
+                    <button
+                      type="button"
+                      onClick={handleResetForm}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '11px 18px',
+                        borderRadius: '12px',
+                        border: '1.5px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#1E293B',
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <RotateCcw size={16} />
+                      <span>Send Another Enquiry</span>
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="enquiry-form"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {errorNotice && (
+                    <div
+                      style={{
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                        color: '#DC2626',
+                        fontSize: '13.5px',
+                        marginBottom: '20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                      role="alert"
+                    >
+                      <AlertTriangle size={16} color="#DC2626" />
+                      <span>{errorNotice}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSubmit} noValidate>
+                    {/* Row 1: Name and Email */}
+                    <div className="contact-form-row">
+                      <div className="contact-field-group">
+                        <label htmlFor="contact-name" className="contact-field-label">
+                          Name
+                        </label>
+                        <div className="contact-input-wrapper">
+                          <User size={18} className="contact-input-icon" />
+                          <input
+                            ref={nameRef}
+                            id="contact-name"
+                            name="name"
+                            required
+                            placeholder="Your name"
+                            value={formData.name}
+                            aria-invalid={Boolean(fieldErrors.name)}
+                            className={`contact-input ${fieldErrors.name ? 'error' : ''}`}
+                            onChange={(e) => handleChange('name', e.target.value)}
+                            onBlur={() => handleBlur('name')}
+                          />
+                        </div>
+                        {fieldErrors.name && (
+                          <p className="contact-field-error">{fieldErrors.name}</p>
+                        )}
+                      </div>
+
+                      <div className="contact-field-group">
+                        <label htmlFor="contact-email" className="contact-field-label">
+                          Email
+                        </label>
+                        <div className="contact-input-wrapper">
+                          <Mail size={18} className="contact-input-icon" />
+                          <input
+                            ref={emailRef}
+                            id="contact-email"
+                            name="email"
+                            type="email"
+                            required
+                            placeholder="you@example.com"
+                            value={formData.email}
+                            aria-invalid={Boolean(fieldErrors.email)}
+                            className={`contact-input ${fieldErrors.email ? 'error' : ''}`}
+                            onChange={(e) => handleChange('email', e.target.value)}
+                            onBlur={() => handleBlur('email')}
+                          />
+                        </div>
+                        {fieldErrors.email && (
+                          <p className="contact-field-error">{fieldErrors.email}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Row 2: Phone (Optional) and Service */}
+                    <div className="contact-form-row">
+                      <div className="contact-field-group">
+                        <label htmlFor="contact-phone" className="contact-field-label">
+                          Phone (Optional)
+                        </label>
+                        <div className="contact-input-wrapper">
+                          <Phone size={18} className="contact-input-icon" />
+                          <input
+                            ref={phoneRef}
+                            id="contact-phone"
+                            name="phone"
+                            type="tel"
+                            placeholder="+91 98765 43210"
+                            value={formData.phone}
+                            aria-invalid={Boolean(fieldErrors.phone)}
+                            className={`contact-input ${fieldErrors.phone ? 'error' : ''}`}
+                            onChange={(e) => handleChange('phone', e.target.value)}
+                            onBlur={() => handleBlur('phone')}
+                          />
+                        </div>
+                        {fieldErrors.phone && (
+                          <p className="contact-field-error">{fieldErrors.phone}</p>
+                        )}
+                      </div>
+
+                      <Field data-invalid={Boolean(fieldErrors.service)} className="contact-field-group">
+                        <FieldLabel htmlFor="contact-service" className="contact-field-label">
+                          Service
+                        </FieldLabel>
+                        <Select
+                          value={formData.service}
+                          onValueChange={(val) => {
+                            handleChange('service', val);
+                            if (serviceRef.current) {
+                              serviceRef.current.value = val;
+                            }
+                          }}
+                        >
+                          <SelectTrigger
+                            id="contact-service"
+                            aria-invalid={Boolean(fieldErrors.service)}
+                            className={`contact-select-trigger ${fieldErrors.service ? 'error' : ''}`}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                              <LayoutGrid size={18} style={{ color: '#0066FF', flexShrink: 0 }} />
+                              <SelectValue placeholder="Select a service" />
+                            </div>
+                          </SelectTrigger>
+                          <SelectContent alignItemWithTrigger={false} className="contact-select-dropdown-content">
+                            <SelectGroup>
+                              <SelectLabel className="contact-select-label-group">Creative &amp; Technical Services</SelectLabel>
+                              <SelectItem value="Topic to Video">Topic to Video</SelectItem>
+                              <SelectItem value="Video Editing">Video Editing</SelectItem>
+                              <SelectItem value="Video to Shorts">Video to Shorts</SelectItem>
+                              <SelectItem value="Thumbnail & Title Design">Thumbnail &amp; Title Design</SelectItem>
+                              <SelectItem value="Social Media Consultation">Social Media Consultation</SelectItem>
+                              <SelectItem value="Business Promotion">Business Promotion</SelectItem>
+                              <SelectItem value="Pen Drive Data Recovery">Pen Drive Data Recovery</SelectItem>
+                              <SelectItem value="Online Tech Support">Online Tech Support</SelectItem>
+                            </SelectGroup>
+                            <SelectSeparator className="contact-select-sep" />
+                            <SelectGroup>
+                              <SelectLabel className="contact-select-label-group">MarsNova Lab Courses</SelectLabel>
+                              <SelectItem value="Computer Fundamentals">Computer Fundamentals</SelectItem>
+                              <SelectItem value="AI Tools & Automation">AI Tools & Automation</SelectItem>
+                              <SelectItem value="Video Editing Bootcamp">Video Editing Bootcamp</SelectItem>
+                              <SelectItem value="Graphic Design">Graphic Design</SelectItem>
+                              <SelectItem value="Social Media Growth">Social Media Growth</SelectItem>
+                              <SelectItem value="Practical Projects">Practical Projects</SelectItem>
+                            </SelectGroup>
+                            <SelectSeparator className="contact-select-sep" />
+                            <SelectGroup>
+                              <SelectLabel className="contact-select-label-group">General</SelectLabel>
+                              <SelectItem value="Custom Project / Other">Custom Project / Other</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        {fieldErrors.service && (
+                          <FieldError errors={[{ message: fieldErrors.service }]} />
+                        )}
+
+                        {/* Hidden Native Select for DOM & automated testing compliance */}
+                        <select
+                          ref={serviceRef}
+                          id="contact-service-native"
+                          name="service"
+                          value={formData.service}
+                          onChange={(e) => handleChange('service', e.target.value)}
+                          onBlur={() => handleBlur('service')}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          style={{
+                            position: 'absolute',
+                            opacity: 0,
+                            pointerEvents: 'none',
+                            width: '1px',
+                            height: '1px',
+                            margin: '-1px'
+                          }}
+                        >
+                          <option value="">Select a service</option>
+                          <optgroup label="Creative & Technical Services">
+                            <option value="Topic to Video">Topic to Video</option>
+                            <option value="Video Editing">Video Editing</option>
+                            <option value="Video to Shorts">Video to Shorts</option>
+                            <option value="Thumbnail & Title Design">Thumbnail & Title Design</option>
+                            <option value="Social Media Consultation">Social Media Consultation</option>
+                            <option value="Business Promotion">Business Promotion</option>
+                            <option value="Pen Drive Data Recovery">Pen Drive Data Recovery</option>
+                            <option value="Online Tech Support">Online Tech Support</option>
+                          </optgroup>
+                          <optgroup label="MarsNova Lab Courses">
+                            <option value="Computer Fundamentals">Computer Fundamentals</option>
+                            <option value="AI Tools & Automation">AI Tools & Automation</option>
+                            <option value="Video Editing Bootcamp">Video Editing Bootcamp</option>
+                            <option value="Graphic Design">Graphic Design</option>
+                            <option value="Social Media Growth">Social Media Growth</option>
+                            <option value="Practical Projects">Practical Projects</option>
+                          </optgroup>
+                          <optgroup label="General">
+                            <option value="Custom Project / Other">Custom Project / Other</option>
+                          </optgroup>
+                        </select>
+                      </Field>
+                    </div>
+
+                    {/* Row 3: Project Details */}
+                    <div className="contact-field-group" style={{ marginBottom: '18px' }}>
+                      <label htmlFor="contact-message" className="contact-field-label">
+                        Project Details
+                      </label>
+                      <div className="contact-textarea-wrapper">
+                        <FileText size={18} className="contact-textarea-icon" style={{ color: '#0066FF' }} />
+                        <textarea
+                          ref={messageRef}
+                          id="contact-message"
+                          name="message"
+                          rows={4}
+                          required
+                          placeholder="Briefly describe your project..."
+                          value={formData.message}
+                          aria-invalid={Boolean(fieldErrors.message)}
+                          className={`contact-textarea ${fieldErrors.message ? 'error' : ''}`}
+                          onChange={(e) => handleChange('message', e.target.value)}
+                          onBlur={() => handleBlur('message')}
+                        />
+                      </div>
+                      {fieldErrors.message && (
+                        <p className="contact-field-error">{fieldErrors.message}</p>
+                      )}
+                    </div>
+
+                    {/* Row 4: Controlled Privacy Consent */}
+                    <label htmlFor="contact-consent" className="contact-consent-row">
+                      <input
+                        type="checkbox"
+                        id="contact-consent"
+                        name="consent"
+                        checked={formData.consent}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, consent: e.target.checked }))}
+                        style={{
+                          position: 'absolute',
+                          opacity: 0,
+                          width: '1px',
+                          height: '1px',
+                          margin: '-1px',
+                          overflow: 'hidden',
+                          clip: 'rect(0, 0, 0, 0)',
+                          pointerEvents: 'none'
+                        }}
                         required
-                        placeholder="Tell us about your project timeline, topic, channel, or data recovery situation..."
-                        value={formData.message}
-                        aria-invalid={Boolean(fieldErrors.message)}
-                        onChange={(e) => handleChange('message', e.target.value)}
-                        onBlur={() => handleBlur('message')}
                       />
-                      <InputGroupAddon align="block-end">
-                        <InputGroupText className="tabular-nums">
-                          {formData.message.length} characters (min 10)
-                        </InputGroupText>
-                      </InputGroupAddon>
-                    </InputGroup>
-                    <FieldDescription>
-                      Minimum 10 characters.
-                    </FieldDescription>
-                    {fieldErrors.message && (
-                      <FieldError errors={[{ message: fieldErrors.message }]} />
-                    )}
-                  </Field>
-
-                  <div style={{ margin: '14px 0 20px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                    <input
-                      type="checkbox"
-                      id="contact-consent"
-                      name="consent"
-                      checked={formData.consent}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, consent: e.target.checked }))}
-                      style={{ marginTop: '3px', accentColor: 'var(--cyan-accent)', width: '16px', height: '16px', cursor: 'pointer' }}
-                      required
-                    />
-                    <label htmlFor="contact-consent" style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.4', cursor: 'pointer' }}>
-                      I consent to MarsNova saving my contact details and contacting me regarding this project enquiry via email, phone, or WhatsApp.
+                      <div
+                        className={`contact-check-box ${formData.consent ? 'checked' : ''}`}
+                        aria-hidden="true"
+                      >
+                        {formData.consent && <Check size={13} strokeWidth={3} color="#FFFFFF" />}
+                      </div>
+                      <span className="contact-consent-text">
+                        I consent to MarsNova saving my contact details and contacting me regarding this project enquiry via email, phone, or WhatsApp.
+                      </span>
                     </label>
-                  </div>
 
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    size="md"
-                    isLoading={loading}
-                    rightIcon={<ArrowRight size={16} />}
-                    fullWidth
-                    style={{ marginTop: '8px' }}
-                  >
-                    Submit Enquiry
-                  </Button>
-                </FieldGroup>
-              </form>
-            )}
-          </>
-        )}
-      </Card>
+                    {/* Row 5: Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="contact-submit-btn"
+                    >
+                      <Send size={18} />
+                      <span>{loading ? 'Submitting...' : 'Submit Enquiry'}</span>
+                      <ArrowRight size={18} />
+                    </button>
+                  </form>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
-          {/* Right Column: Other Ways to Reach Us */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <Card className="contact-card" style={{ padding: '36px' }}>
-              <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 700, marginBottom: '20px' }}>
-                Other Ways to Reach Us
-              </h2>
+          {/* =============================================================
+              Right Column: "Chat on WhatsApp" & "Other Ways to Reach Us"
+              ============================================================= */}
+          <div className="contact-sidebar-col">
+            {/* Top Card: Chat on WhatsApp */}
+            <div className="contact-sidebar-card">
+              <div className="contact-whatsapp-header">
+                <div className="contact-whatsapp-icon-badge" aria-hidden="true">
+                  <WhatsAppLogo size={22} color="#FFFFFF" />
+                </div>
+                <h2 className="contact-whatsapp-title">Chat on WhatsApp</h2>
+              </div>
 
-              <div className="contact-channels">
-                <a href="mailto:hello@marsnova.in" className="channel-item">
-                  <div className="channel-icon">
-                    <Mail size={18} />
+              {/* Chat Message Bubble */}
+              <div className="contact-chat-bubble">
+                <p className="contact-chat-text">
+                  Hi, I'm interested in your services.
+                  <br />
+                  Please share more details.
+                </p>
+              </div>
+
+              {/* WhatsApp Action Button */}
+              <a
+                href={`https://wa.me/917208591595?text=${encodeURIComponent(dynamicWhatsAppText)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="contact-whatsapp-btn"
+              >
+                <WhatsAppLogo size={18} color="#FFFFFF" />
+                <span>Send on WhatsApp</span>
+                <ArrowRight size={18} />
+              </a>
+            </div>
+
+            {/* Bottom Card: Other Ways to Reach Us */}
+            <div className="contact-sidebar-card">
+              <h2 className="contact-reach-title">Other Ways to Reach Us</h2>
+
+              <div className="contact-reach-list">
+                {/* 1. Email */}
+                <a href="mailto:hello@marsnova.in" className="contact-reach-item">
+                  <div className="contact-reach-icon-box blue" aria-hidden="true">
+                    <Mail size={19} color="#2563EB" />
                   </div>
-                  <div>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block' }}>Email</span>
-                    <strong style={{ fontSize: '14px', color: '#fff' }}>hello@marsnova.in</strong>
+                  <div className="contact-reach-text-col">
+                    <span className="contact-reach-label">Email</span>
+                    <strong className="contact-reach-value">hello@marsnova.in</strong>
                   </div>
+                  <ChevronRight size={18} className="contact-reach-chevron" />
                 </a>
 
+                {/* 2. Instagram */}
                 <a
                   href="https://instagram.com/marsnova.in"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="channel-item"
+                  className="contact-reach-item"
                 >
-                  <div className="channel-icon" style={{ color: 'var(--purple-glow)' }}>
-                    <Instagram size={18} />
+                  <div className="contact-reach-icon-box instagram" aria-hidden="true">
+                    <Instagram size={19} color="#FFFFFF" />
                   </div>
-                  <div>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block' }}>Instagram</span>
-                    <strong style={{ fontSize: '14px', color: '#fff' }}>@marsnova.in</strong>
+                  <div className="contact-reach-text-col">
+                    <span className="contact-reach-label">Instagram</span>
+                    <strong className="contact-reach-value">@marsnova.in</strong>
                   </div>
+                  <ChevronRight size={18} className="contact-reach-chevron" />
                 </a>
 
-                <a
-                  href="https://wa.me/917208591595"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="channel-item"
-                >
-                  <div className="channel-icon" style={{ color: '#22c55e' }}>
-                    <MessageCircle size={18} />
+                {/* 3. Call Us */}
+                <a href="tel:+917228867676" className="contact-reach-item">
+                  <div className="contact-reach-icon-box blue" aria-hidden="true">
+                    <Phone size={19} color="#2563EB" />
                   </div>
-                  <div>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block' }}>WhatsApp</span>
-                    <strong style={{ fontSize: '14px', color: '#fff' }}>+91 7208591595</strong>
+                  <div className="contact-reach-text-col">
+                    <span className="contact-reach-label">Call Us</span>
+                    <strong className="contact-reach-value">+91 72288 67 676</strong>
                   </div>
+                  <ChevronRight size={18} className="contact-reach-chevron" />
                 </a>
+              </div>
 
-                <div className="channel-item">
-                  <div className="channel-icon">
-                    <MapPin size={18} />
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block' }}>Locations</span>
-                    <strong style={{ fontSize: '14px', color: '#fff' }}>Mumbai & Delhi NCR, India</strong>
-                  </div>
+              {/* Studio Presence & Direct Verified Channel Footer */}
+              <div className="contact-location-footer">
+                <div className="contact-location-info">
+                  <MapPin size={14} color="#0066FF" />
+                  <span>{'Mumbai & Delhi NCR, India'}</span>
                 </div>
+                <span className="contact-wa-verified">WhatsApp: +91 7208591595</span>
               </div>
-            </Card>
-
-            {/* Business Enquiries Callout */}
-            <Card
-              variant="glow"
-              className="contact-card"
-              style={{
-                background:
-                  'linear-gradient(135deg, rgba(121, 25, 245, 0.15) 0%, rgba(8, 15, 29, 0.95) 100%)',
-                padding: '36px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                <Briefcase size={20} color="var(--cyan-accent)" />
-                <h3 style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
-                  Brand & Commercial Partnerships
-                </h3>
-              </div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
-                For brand promotions, creator sponsorships, institutional training, and enterprise data recovery
-                reconstruction.
-              </p>
-              <a
-                href="https://wa.me/917208591595?text=Hi%20MarsNova%20Team%2C%20I%20would%20like%20to%20discuss%20a%20Business%20Partnership%20or%20Promotion."
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-primary btn-sm"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}
-              >
-                <span>Partner With Us</span>
-                <ArrowRight size={14} />
-              </a>
-            </Card>
+            </div>
           </div>
         </div>
-      </Container>
-    </div>
-  </PageTransition>
-);
+      </div>
+    </PageTransition>
+  );
 };

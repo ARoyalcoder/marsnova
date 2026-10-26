@@ -30,7 +30,12 @@ export function SidebarProvider({
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
 }) {
-  const [_open, _setOpen] = React.useState(defaultOpen);
+  const [_open, _setOpen] = React.useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      return false; // Close drawer on mobile by default so dashboard is visible
+    }
+    return defaultOpen;
+  });
   const open = openProp ?? _open;
   const setOpen = React.useCallback(
     (value: boolean) => {
@@ -66,6 +71,13 @@ const Sidebar = React.forwardRef<
       {open && (
         <div
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 999,
+            backgroundColor: 'rgba(3, 9, 18, 0.75)',
+            backdropFilter: 'blur(4px)'
+          }}
           onClick={() => setOpen(false)}
           aria-hidden="true"
         />
@@ -82,6 +94,20 @@ const Sidebar = React.forwardRef<
           backgroundColor: '#080F1D',
           borderColor: '#101B2B',
           color: '#F5F7FF',
+          maxWidth: '85vw',
+          ...(typeof window !== 'undefined' && window.innerWidth < 1024
+            ? {
+                position: 'fixed',
+                top: 0,
+                bottom: 0,
+                left: 0,
+                zIndex: 1000,
+                width: '280px',
+                transform: open ? 'translateX(0)' : 'translateX(-100%)',
+                transition: 'transform 0.25s ease-in-out',
+                boxShadow: open ? '0 0 50px rgba(0,0,0,0.9)' : 'none'
+              }
+            : {}),
           ...props.style
         }}
         {...props}
@@ -92,6 +118,7 @@ const Sidebar = React.forwardRef<
             onClick={() => setOpen(false)}
             className="p-1 text-[var(--text-dim,#64748B)] hover:text-white rounded"
             aria-label="Close sidebar"
+            style={{ minHeight: '36px', minWidth: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <X size={20} />
           </button>
@@ -116,6 +143,17 @@ const SidebarTrigger = React.forwardRef<
         'inline-flex items-center justify-center p-2 rounded-md text-[var(--text-muted,#94A3B8)] hover:text-white hover:bg-[var(--surface-hover,#101B2B)] cursor-pointer',
         className
       )}
+      style={{
+        minHeight: '38px',
+        minWidth: '38px',
+        border: '1px solid var(--border-muted)',
+        borderRadius: '8px',
+        background: 'var(--bg-deep)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...props.style
+      }}
       onClick={(e) => {
         toggleSidebar();
         onClick?.(e);

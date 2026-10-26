@@ -1,11 +1,16 @@
 #include "AuthController.h"
 #include "../utils/Security.h"
+#include "../utils/Validation.h"
 #include <drogon/drogon.h>
 #include <unordered_map>
 #include <mutex>
+#include <atomic>
 #include <regex>
 #include <chrono>
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <iostream>
 
 namespace {
 
@@ -18,6 +23,7 @@ struct SessionRecord {
     std::string status;
     std::string csrfToken;
     std::chrono::system_clock::time_point expiresAt;
+    std::chrono::system_clock::time_point lastVerifiedAt;
 };
 
 struct UserRecord {
@@ -31,8 +37,23 @@ struct UserRecord {
 
 static std::mutex s_authMutex;
 static std::unordered_map<std::string, SessionRecord> s_sessions;
+
+// Process-local staff accounts. This is the live user store in the standalone compat build
+// (its DbClient is a stub) and the fixture store for tests. Nothing seeds it: it starts
+// empty and only gets accounts from bootstrapAdminFromEnv(), createStaffUser or seedTestUser.
 static std::unordered_map<std::string, UserRecord> s_users;
-static bool s_initialized = false;
+
+// PostgreSQL is the user store when built against real Drogon.
+#ifdef MARSNOVA_COMPAT_DROGON
+static std::atomic<bool> s_useDatabase{false};
+#else
+static std::atomic<bool> s_useDatabase{true};
+#endif
+static std::atomic<int> s_staffCountCache{0};
+static std::atomic<long long> s_revalidateSeconds{60};
+
+// Only these roles may hold a staff session. users also holds client/learner accounts.
+#define MARSNOVA_STAFF_ROLES_SQL "('super_admin','agency_manager','editor')"
 
 static std::string toLower(const std::string &str) {
     std::string lower = str;
@@ -43,59 +64,234 @@ static std::string toLower(const std::string &str) {
 }
 
 static bool isValidEmail(const std::string &email) {
-    const std::regex pattern(R"((\w+)(\.{1}\w+)*@(\w+)(\.{1}\w+)+)");
-    return std::regex_match(email, pattern);
+    return Validation::isValidEmail(email);
 }
 
-void ensureInitialized() {
-    if (s_initialized) return;
-    s_initialized = true;
+// -----------------------------------------------------------------------------
+// Staff user store: PostgreSQL (real Drogon) or the process-local map (compat/tests).
+// Callbacks are never invoked while s_authMutex is held.
+// -----------------------------------------------------------------------------
+enum class LookupResult { Found, NotFound, Error };
+enum class InsertResult { Created, Conflict, Error };
+enum class BootstrapResult { Created, Skipped, Error };
 
-    // Seed default staff members with secure hashed passwords
-    UserRecord u1;
-    u1.id = "u-00000000-0001";
-    u1.email = "admin@marsnova.in";
-    u1.fullName = "Aditya Verma (Super Admin)";
-    u1.role = "super_admin";
-    u1.status = "active";
-    u1.passwordHash = Security::hashPassword("Admin@2026!");
-    s_users[toLower(u1.email)] = u1;
+using LookupCallback = std::function<void(LookupResult, const UserRecord &)>;
+using InsertCallback = std::function<void(InsertResult)>;
+using BootstrapCallback = std::function<void(BootstrapResult)>;
 
-    UserRecord u2;
-    u2.id = "u-00000000-0002";
-    u2.email = "manager@marsnova.in";
-    u2.fullName = "Priya Sharma (Studio Manager)";
-    u2.role = "agency_manager";
-    u2.status = "active";
-    u2.passwordHash = Security::hashPassword("Manager@2026!");
-    s_users[toLower(u2.email)] = u2;
+static bool isStaffRole(const std::string &role) {
+    return role == "super_admin" || role == "agency_manager" || role == "editor";
+}
 
-    UserRecord u3;
-    u3.id = "u-00000000-0003";
-    u3.email = "editor@marsnova.in";
-    u3.fullName = "Rohan Das (Lead Video Editor)";
-    u3.role = "editor";
-    u3.status = "active";
-    u3.passwordHash = Security::hashPassword("Editor@2026!");
-    s_users[toLower(u3.email)] = u3;
+static void findUserByEmail(const std::string &email, LookupCallback cb) {
+    const std::string key = toLower(email);
 
-    UserRecord u4;
-    u4.id = "u-00000000-0004";
-    u4.email = "suspended@marsnova.in";
-    u4.fullName = "Suspended Operator";
-    u4.role = "editor";
-    u4.status = "suspended";
-    u4.passwordHash = Security::hashPassword("Suspended@2026!");
-    s_users[toLower(u4.email)] = u4;
+    if (!s_useDatabase) {
+        UserRecord user;
+        bool found = false;
+        {
+            std::lock_guard<std::mutex> lock(s_authMutex);
+            auto it = s_users.find(key);
+            if (it != s_users.end()) {
+                user = it->second;
+                found = true;
+            }
+        }
+        cb(found ? LookupResult::Found : LookupResult::NotFound, user);
+        return;
+    }
 
-    UserRecord u5;
-    u5.id = "u-00000000-0005";
-    u5.email = "inactive@marsnova.in";
-    u5.fullName = "Inactive Contractor";
-    u5.role = "editor";
-    u5.status = "inactive";
-    u5.passwordHash = Security::hashPassword("Inactive@2026!");
-    s_users[toLower(u5.email)] = u5;
+    auto db = drogon::app().getDbClient("default");
+    if (!db) {
+        cb(LookupResult::Error, UserRecord{});
+        return;
+    }
+
+    db->execSqlAsync(
+        "SELECT u.id::text AS id, u.email AS email, u.password_hash AS password_hash, "
+        "u.full_name AS full_name, r.role_name AS role, u.status AS status "
+        "FROM users u JOIN roles r ON r.id = u.role_id "
+        "WHERE lower(u.email) = $1 AND r.role_name IN " MARSNOVA_STAFF_ROLES_SQL " LIMIT 1",
+        [cb](const drogon::orm::Result &r) {
+            if (r.empty()) {
+                cb(LookupResult::NotFound, UserRecord{});
+                return;
+            }
+            const auto &row = r[0];
+            UserRecord user;
+            user.id = row["id"].as<std::string>();
+            user.email = row["email"].as<std::string>();
+            user.passwordHash = row["password_hash"].as<std::string>();
+            user.fullName = row["full_name"].as<std::string>();
+            user.role = row["role"].as<std::string>();
+            user.status = row["status"].as<std::string>();
+            cb(LookupResult::Found, user);
+        },
+        [cb](const drogon::orm::DrogonDbException &e) {
+            std::cout << "[MarsNova Auth] user lookup failed: " << e.base().what() << std::endl;
+            cb(LookupResult::Error, UserRecord{});
+        },
+        key
+    );
+}
+
+// Creates a staff account. Emails are stored lowercase so lookups and uniqueness agree.
+static void insertStaffUser(UserRecord user, InsertCallback cb) {
+    const std::string key = toLower(user.email);
+
+    if (!s_useDatabase) {
+        bool conflict = false;
+        {
+            std::lock_guard<std::mutex> lock(s_authMutex);
+            if (s_users.find(key) != s_users.end()) {
+                conflict = true;
+            } else {
+                user.id = "u-" + Security::randomHex(8);
+                s_users[key] = user;
+            }
+        }
+        cb(conflict ? InsertResult::Conflict : InsertResult::Created);
+        return;
+    }
+
+    auto db = drogon::app().getDbClient("default");
+    if (!db) {
+        cb(InsertResult::Error);
+        return;
+    }
+
+    db->execSqlAsync(
+        "INSERT INTO users (role_id, email, password_hash, full_name, status) "
+        "SELECT r.id, $1, $2, $3, 'active' FROM roles r WHERE r.role_name = $4 "
+        "ON CONFLICT (email) DO NOTHING RETURNING id::text AS id",
+        [cb](const drogon::orm::Result &r) {
+            cb(r.empty() ? InsertResult::Conflict : InsertResult::Created);
+        },
+        [cb](const drogon::orm::DrogonDbException &e) {
+            std::cout << "[MarsNova Auth] staff insert failed: " << e.base().what() << std::endl;
+            cb(InsertResult::Error);
+        },
+        key, user.passwordHash, user.fullName, user.role
+    );
+}
+
+// Creates the first admin only when no active super_admin exists. In PostgreSQL the check and the
+// insert are one statement, so concurrent starts cannot both create an admin.
+static void insertBootstrapAdmin(UserRecord admin, BootstrapCallback cb) {
+    const std::string key = toLower(admin.email);
+
+    if (!s_useDatabase) {
+        bool created = false;
+        {
+            std::lock_guard<std::mutex> lock(s_authMutex);
+            bool hasActiveAdmin = false;
+            for (const auto &kv : s_users) {
+                if (kv.second.role == "super_admin" && kv.second.status == "active") {
+                    hasActiveAdmin = true;
+                    break;
+                }
+            }
+            if (!hasActiveAdmin && s_users.find(key) == s_users.end()) {
+                admin.id = "u-" + Security::randomHex(8);
+                s_users[key] = admin;
+                created = true;
+            }
+        }
+        cb(created ? BootstrapResult::Created : BootstrapResult::Skipped);
+        return;
+    }
+
+    auto db = drogon::app().getDbClient("default");
+    if (!db) {
+        cb(BootstrapResult::Error);
+        return;
+    }
+
+    db->execSqlAsync(
+        "INSERT INTO users (role_id, email, password_hash, full_name, status) "
+        "SELECT r.id, $1, $2, $3, 'active' FROM roles r WHERE r.role_name = 'super_admin' "
+        "AND NOT EXISTS (SELECT 1 FROM users u JOIN roles sr ON sr.id = u.role_id "
+        "WHERE sr.role_name = 'super_admin' AND u.status = 'active') "
+        "ON CONFLICT (email) DO NOTHING RETURNING id::text AS id",
+        [cb](const drogon::orm::Result &r) {
+            cb(r.empty() ? BootstrapResult::Skipped : BootstrapResult::Created);
+        },
+        [cb](const drogon::orm::DrogonDbException &e) {
+            std::cout << "[MarsNova Auth] bootstrap insert failed: " << e.base().what() << std::endl;
+            cb(BootstrapResult::Error);
+        },
+        key, admin.passwordHash, admin.fullName
+    );
+}
+
+// Refreshes the cached active-staff count shown on the admin overview (PostgreSQL mode only).
+static void refreshStaffCount() {
+    if (!s_useDatabase) return;
+    auto db = drogon::app().getDbClient("default");
+    if (!db) return;
+
+    db->execSqlAsync(
+        "SELECT count(*)::text AS n FROM users u JOIN roles r ON r.id = u.role_id "
+        "WHERE u.status = 'active' AND r.role_name IN " MARSNOVA_STAFF_ROLES_SQL,
+        [](const drogon::orm::Result &r) {
+            if (r.empty()) return;
+            try {
+                s_staffCountCache = std::stoi(r[0]["n"].as<std::string>());
+            } catch (...) {
+            }
+        },
+        [](const drogon::orm::DrogonDbException &) {}
+    );
+}
+
+// Re-checks a database-backed session's user. A suspended, deactivated, removed or no-longer-staff
+// user loses the session. A failed check keeps the session so a database blip cannot lock staff out.
+static void revalidateSessionAsync(const std::string &sessionId, const std::string &userId) {
+    auto db = drogon::app().getDbClient("default");
+    if (!db) return;
+
+    db->execSqlAsync(
+        "SELECT u.status AS status, r.role_name AS role FROM users u "
+        "JOIN roles r ON r.id = u.role_id WHERE u.id = $1::uuid LIMIT 1",
+        [sessionId](const drogon::orm::Result &r) {
+            std::string status;
+            std::string role;
+            bool revoke = true;
+            if (!r.empty()) {
+                status = r[0]["status"].as<std::string>();
+                role = r[0]["role"].as<std::string>();
+                revoke = (status != "active") || !isStaffRole(role);
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(s_authMutex);
+                auto it = s_sessions.find(sessionId);
+                if (it == s_sessions.end()) return;
+                if (revoke) {
+                    s_sessions.erase(it);
+                } else {
+                    it->second.role = role;
+                    it->second.status = status;
+                }
+            }
+
+            if (revoke) {
+                auto dbClient = drogon::app().getDbClient("default");
+                if (dbClient) {
+                    dbClient->execSqlAsync(
+                        "DELETE FROM sessions WHERE id = $1",
+                        [](const drogon::orm::Result &) {},
+                        [](const drogon::orm::DrogonDbException &) {},
+                        sessionId
+                    );
+                }
+            }
+        },
+        [](const drogon::orm::DrogonDbException &e) {
+            std::cout << "[MarsNova Auth] session revalidation failed: " << e.base().what() << std::endl;
+        },
+        userId
+    );
 }
 
 std::string extractSessionId(const drogon::HttpRequestPtr &req) {
@@ -152,51 +348,74 @@ bool authenticateSession(const drogon::HttpRequestPtr &req,
         return false;
     }
 
-    ensureInitialized();
-    std::lock_guard<std::mutex> lock(s_authMutex);
-    auto it = s_sessions.find(sid);
-    if (it == s_sessions.end()) {
-        outError["error"] = "Invalid or expired session. Please log in.";
-        outError["code"] = "INVALID_SESSION";
-        outStatus = drogon::k401Unauthorized;
-        return false;
-    }
+    bool needsRevalidation = false;
+    std::string revalidateUserId;
 
-    auto now = std::chrono::system_clock::now();
-    if (now >= it->second.expiresAt) {
-        s_sessions.erase(it);
-        outError["error"] = "Session expired. Please log in again.";
-        outError["code"] = "SESSION_EXPIRED";
-        outStatus = drogon::k401Unauthorized;
-        return false;
-    }
-
-    // Re-verify underlying user account status
-    auto userIt = s_users.find(toLower(it->second.email));
-    if (userIt != s_users.end()) {
-        if (userIt->second.status == "suspended") {
-            s_sessions.erase(it);
-            outError["error"] = "Your staff account has been suspended.";
-            outError["code"] = "ACCOUNT_SUSPENDED";
-            outStatus = drogon::k403Forbidden;
+    {
+        std::lock_guard<std::mutex> lock(s_authMutex);
+        auto it = s_sessions.find(sid);
+        if (it == s_sessions.end()) {
+            outError["error"] = "Invalid or expired session. Please log in.";
+            outError["code"] = "INVALID_SESSION";
+            outStatus = drogon::k401Unauthorized;
             return false;
         }
-        if (userIt->second.status != "active") {
+
+        auto now = std::chrono::system_clock::now();
+        if (now >= it->second.expiresAt) {
             s_sessions.erase(it);
-            outError["error"] = "Your account is not active.";
-            outError["code"] = "ACCOUNT_INACTIVE";
-            outStatus = drogon::k403Forbidden;
+            outError["error"] = "Session expired. Please log in again.";
+            outError["code"] = "SESSION_EXPIRED";
+            outStatus = drogon::k401Unauthorized;
             return false;
         }
-        it->second.status = userIt->second.status;
-        it->second.role = userIt->second.role;
+
+        if (!s_useDatabase) {
+            // Re-verify underlying user account status
+            auto userIt = s_users.find(toLower(it->second.email));
+            if (userIt != s_users.end()) {
+                if (userIt->second.status == "suspended") {
+                    s_sessions.erase(it);
+                    outError["error"] = "Your staff account has been suspended.";
+                    outError["code"] = "ACCOUNT_SUSPENDED";
+                    outStatus = drogon::k403Forbidden;
+                    return false;
+                }
+                if (userIt->second.status != "active") {
+                    s_sessions.erase(it);
+                    outError["error"] = "Your account is not active.";
+                    outError["code"] = "ACCOUNT_INACTIVE";
+                    outStatus = drogon::k403Forbidden;
+                    return false;
+                }
+                it->second.status = userIt->second.status;
+                it->second.role = userIt->second.role;
+            }
+        } else if (now - it->second.lastVerifiedAt >= std::chrono::seconds(s_revalidateSeconds.load())) {
+            // The database can't be read synchronously here, so refresh in the background.
+            // A suspension takes effect within one interval plus one request.
+            it->second.lastVerifiedAt = now;
+            needsRevalidation = true;
+            revalidateUserId = it->second.userId;
+        }
+
+        outSession = it->second;
     }
 
-    outSession = it->second;
+    if (needsRevalidation) {
+        revalidateSessionAsync(sid, revalidateUserId);
+    }
     return true;
 }
 
 } // namespace
+
+static void completeLogin(const std::function<void(const drogon::HttpResponsePtr &)> &callback,
+                          const std::string &reqId,
+                          const std::string &clientIp,
+                          const std::string &password,
+                          LookupResult lookup,
+                          const UserRecord &user);
 
 AuthController::StaffAuthResult AuthController::verifyRequestSession(const drogon::HttpRequestPtr &req) {
     StaffAuthResult res;
@@ -227,11 +446,11 @@ void AuthController::seedTestUser(const std::string &email,
                                  const std::string &password,
                                  const std::string &role,
                                  const std::string &status,
-                                 const std::string &fullName) {
-    ensureInitialized();
+                                 const std::string &fullName,
+                                 const std::string &id) {
     std::lock_guard<std::mutex> lock(s_authMutex);
     UserRecord u;
-    u.id = "u-" + Security::randomHex(8);
+    u.id = id.empty() ? "u-" + Security::randomHex(8) : id;
     u.email = email;
     u.fullName = fullName;
     u.role = role;
@@ -248,7 +467,83 @@ void AuthController::clearSessions() {
 void AuthController::clearUsers() {
     std::lock_guard<std::mutex> lock(s_authMutex);
     s_users.clear();
-    s_initialized = false;
+}
+
+void AuthController::useDatabaseUserStore(bool enabled) {
+    s_useDatabase = enabled;
+}
+
+bool AuthController::usingDatabaseUserStore() {
+    return s_useDatabase;
+}
+
+void AuthController::setSessionRevalidationInterval(std::chrono::seconds interval) {
+    s_revalidateSeconds = interval.count();
+}
+
+void AuthController::bootstrapAdminFromEnv() {
+    auto readEnv = [](const char *name) {
+        const char *value = std::getenv(name);
+        std::string out = value ? value : "";
+        const auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
+        out.erase(out.begin(), std::find_if_not(out.begin(), out.end(), isSpace));
+        out.erase(std::find_if_not(out.rbegin(), out.rend(), isSpace).base(), out.end());
+        return out;
+    };
+
+    std::cout << "[MarsNova Auth] Staff user store: "
+              << (s_useDatabase ? "PostgreSQL"
+                                : "in-process memory (standalone build: accounts are not persisted across restarts)")
+              << std::endl;
+
+    const std::string email = readEnv("MARSNOVA_BOOTSTRAP_ADMIN_EMAIL");
+    const std::string password = readEnv("MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD");
+    std::string fullName = readEnv("MARSNOVA_BOOTSTRAP_ADMIN_NAME");
+    if (fullName.empty()) fullName = "Studio Administrator";
+
+    if (email.empty() && password.empty()) {
+        std::cout << "[MarsNova Auth] No bootstrap admin requested (MARSNOVA_BOOTSTRAP_ADMIN_EMAIL / _PASSWORD not set)." << std::endl;
+        refreshStaffCount();
+        return;
+    }
+    if (email.empty() || password.empty()) {
+        std::cout << "[MarsNova Auth] Bootstrap admin NOT created: set both MARSNOVA_BOOTSTRAP_ADMIN_EMAIL and "
+                     "MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD." << std::endl;
+        return;
+    }
+    if (!isValidEmail(email)) {
+        std::cout << "[MarsNova Auth] Bootstrap admin NOT created: MARSNOVA_BOOTSTRAP_ADMIN_EMAIL is not a valid email." << std::endl;
+        return;
+    }
+    if (password.length() < 12) {
+        std::cout << "[MarsNova Auth] Bootstrap admin NOT created: MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD must be at least "
+                     "12 characters." << std::endl;
+        return;
+    }
+
+    UserRecord admin;
+    admin.email = email;
+    admin.fullName = fullName;
+    admin.role = "super_admin";
+    admin.status = "active";
+    admin.passwordHash = Security::hashPassword(password);
+
+    insertBootstrapAdmin(admin, [email](BootstrapResult result) {
+        switch (result) {
+            case BootstrapResult::Created:
+                std::cout << "[MarsNova Auth] Bootstrap admin created: " << email
+                          << ". Remove MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD from the environment now." << std::endl;
+                break;
+            case BootstrapResult::Skipped:
+                std::cout << "[MarsNova Auth] Bootstrap admin skipped: an active super_admin already exists, or "
+                          << email << " is already in use. Nothing was changed." << std::endl;
+                break;
+            case BootstrapResult::Error:
+                std::cout << "[MarsNova Auth] Bootstrap admin FAILED: the user store was unavailable." << std::endl;
+                break;
+        }
+        refreshStaffCount();
+    });
 }
 
 void AuthController::expireSession(const std::string &sessionId) {
@@ -311,22 +606,35 @@ void AuthController::login(const drogon::HttpRequestPtr &req,
         return;
     }
 
-    ensureInitialized();
-    UserRecord user;
-    bool found = false;
+    const std::string clientIp = Security::resolveClientIp(req->peerAddr().toIp(), req->getHeader("X-Real-IP"), req->getHeader("X-Forwarded-For"));
+    findUserByEmail(email, [callback, reqId, clientIp, password](LookupResult lookup, const UserRecord &user) {
+        completeLogin(callback, reqId, clientIp, password, lookup, user);
+    });
+}
 
-    {
-        std::lock_guard<std::mutex> lock(s_authMutex);
-        auto it = s_users.find(toLower(email));
-        if (it != s_users.end()) {
-            user = it->second;
-            found = true;
-        }
+// Second half of login, once the user store has answered: synchronously for the in-process
+// store, from the database callback otherwise.
+static void completeLogin(const std::function<void(const drogon::HttpResponsePtr &)> &callback,
+                          const std::string &reqId,
+                          const std::string &clientIp,
+                          const std::string &password,
+                          LookupResult lookup,
+                          const UserRecord &user) {
+    if (lookup == LookupResult::Error) {
+        // Fail closed: never sign anyone in when the user store can't be read.
+        Json::Value err;
+        err["error"] = "Staff sign-in is temporarily unavailable. Please try again shortly.";
+        err["code"] = "AUTH_BACKEND_UNAVAILABLE";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
     }
 
-    if (!found) {
+    if (lookup == LookupResult::NotFound) {
         // Prevent user enumeration by timing
-        Security::verifyPassword("dummy-password", "$dummy$hash$that$takes$normal$time$");
+        Security::verifyPassword("dummy-password", Security::dummyPasswordHash());
         Json::Value err;
         err["error"] = "Invalid email or password";
         err["code"] = "INVALID_CREDENTIALS";
@@ -397,6 +705,7 @@ void AuthController::login(const drogon::HttpRequestPtr &req,
     session.status = user.status;
     session.csrfToken = csrfToken;
     session.expiresAt = expiresAt;
+    session.lastVerifiedAt = std::chrono::system_clock::now();
 
     {
         std::lock_guard<std::mutex> lock(s_authMutex);
@@ -411,7 +720,7 @@ void AuthController::login(const drogon::HttpRequestPtr &req,
             "VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '24 hours')",
             [](const drogon::orm::Result &) {},
             [](const drogon::orm::DrogonDbException &) {},
-            sessionId, user.id, csrfToken, req->peerAddr().toIp()
+            sessionId, user.id, csrfToken, clientIp
         );
         dbClient->execSqlAsync(
             "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1",
@@ -561,225 +870,6 @@ void AuthController::getSession(const drogon::HttpRequestPtr &req,
 }
 
 // -----------------------------------------------------------------------------
-// GET /api/v1/admin/overview (Requires staff session: editor, manager, super_admin)
-// -----------------------------------------------------------------------------
-void AuthController::getAdminOverview(const drogon::HttpRequestPtr &req,
-                                     std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-    if (req->method() == drogon::Options) {
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        callback(resp);
-        return;
-    }
-
-    std::string reqId = req->attributes()->get("request_id");
-    if (reqId.empty()) reqId = req->getHeader("X-Request-Id");
-
-    SessionRecord session;
-    Json::Value err;
-    drogon::HttpStatusCode status;
-
-    if (!authenticateSession(req, session, err, status)) {
-        if (!reqId.empty()) err["request_id"] = reqId;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
-        resp->setStatusCode(status);
-        callback(resp);
-        return;
-    }
-
-    // Role check: must be a recognized staff role
-    if (session.role != "super_admin" && session.role != "agency_manager" && session.role != "editor") {
-        Json::Value rbacErr;
-        rbacErr["error"] = "Access denied. Insufficient permissions for studio admin overview.";
-        rbacErr["code"] = "FORBIDDEN_INSUFFICIENT_PERMISSIONS";
-        if (!reqId.empty()) rbacErr["request_id"] = reqId;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(rbacErr);
-        resp->setStatusCode(drogon::k403Forbidden);
-        callback(resp);
-        return;
-    }
-
-    Json::Value data;
-    data["system_status"] = "operational";
-    data["timestamp"] = "2026-10-23T11:08:00Z";
-    data["authenticated_role"] = session.role;
-    data["staff_user"] = session.fullName;
-    data["enquiries_count"] = 12;
-    data["active_projects_count"] = 4;
-    data["recovery_cases_count"] = 2;
-
-    Json::Value counts;
-    counts["leads_count"] = 12;
-    counts["services_count"] = 8;
-    counts["portfolio_count"] = 8;
-    counts["courses_count"] = 6;
-    counts["staff_count"] = static_cast<int>(s_users.size());
-    counts["active_sessions_count"] = static_cast<int>(s_sessions.size());
-    counts["recovery_cases_count"] = 2;
-    counts["quotations_count"] = 1;
-    data["counts"] = counts;
-
-    // RBAC: Financial summary only available for agency_manager and super_admin
-    if (session.role == "super_admin" || session.role == "agency_manager") {
-        Json::Value financials;
-        financials["total_quotation_value_inr"] = 45000;
-        financials["average_quote_value_inr"] = 45000;
-        Json::Value qStatus;
-        qStatus["Sent"] = 1;
-        qStatus["Draft"] = 0;
-        qStatus["Approved"] = 0;
-        financials["quotes_by_status"] = qStatus;
-        data["financials"] = financials;
-    } else {
-        data["financials"] = Json::nullValue;
-    }
-
-    // Service distribution computed from registered client inquiries
-    Json::Value distribution(Json::arrayValue);
-    {
-        Json::Value c1;
-        c1["category"] = "Topic to Video Production";
-        c1["count"] = 5;
-        c1["percentage"] = 41.7;
-        distribution.append(c1);
-
-        Json::Value c2;
-        c2["category"] = "Video Creation & Editing";
-        c2["count"] = 4;
-        c2["percentage"] = 33.3;
-        distribution.append(c2);
-
-        Json::Value c3;
-        c3["category"] = "Pen Drive Physical Data Recovery";
-        c3["count"] = 2;
-        c3["percentage"] = 16.7;
-        distribution.append(c3);
-
-        Json::Value c4;
-        c4["category"] = "AI Tools & Automation Consulting";
-        c4["count"] = 1;
-        c4["percentage"] = 8.3;
-        distribution.append(c4);
-    }
-    data["service_distribution"] = distribution;
-
-    // Real conversion pipeline calculations
-    Json::Value conversion;
-    conversion["new_leads_count"] = 8;
-    conversion["contacted_leads_count"] = 4;
-    conversion["conversion_rate_percent"] = 33.3; // (4 / 12) * 100
-    data["conversion_metrics"] = conversion;
-
-    // Real activity stream
-    Json::Value activity(Json::arrayValue);
-    {
-        Json::Value a1;
-        a1["id"] = "act-001";
-        a1["type"] = "lead_received";
-        a1["title"] = "Topic to Video Production Inquiry";
-        a1["detail"] = "TechFlow Innovations requested YouTube AI Series quotation";
-        a1["timestamp"] = "2026-10-23T10:15:00Z";
-        a1["status"] = "new";
-        activity.append(a1);
-
-        Json::Value a2;
-        a2["id"] = "act-002";
-        a2["type"] = "recovery_progress";
-        a2["title"] = "SanDisk Ultra Recovery (MN-REC-8291)";
-        a2["detail"] = "NAND carving completed: 1,420 files reconstructed (75%)";
-        a2["timestamp"] = "2026-10-23T09:40:00Z";
-        a2["status"] = "in_progress";
-        activity.append(a2);
-
-        Json::Value a3;
-        a3["id"] = "act-003";
-        a3["type"] = "quote_dispatched";
-        a3["title"] = "Quotation Dispatched (MN-QT-2026-001)";
-        a3["detail"] = "Issued INR 45,000 quotation for Topic to Video + Shorts Package";
-        a3["timestamp"] = "2026-10-22T16:20:00Z";
-        a3["status"] = "sent";
-        activity.append(a3);
-
-        Json::Value a4;
-        a4["id"] = "act-004";
-        a4["type"] = "lab_intake";
-        a4["title"] = "Kingston 128GB Intake (MN-REC-8292)";
-        a4["detail"] = "Device logged into cleanroom diagnostic station";
-        a4["timestamp"] = "2026-10-22T11:00:00Z";
-        a4["status"] = "diagnostic";
-        activity.append(a4);
-    }
-    data["recent_activity"] = activity;
-
-    Json::Value res;
-    res["status"] = "ok";
-    res["data"] = data;
-    if (!reqId.empty()) res["request_id"] = reqId;
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
-    resp->setStatusCode(drogon::k200OK);
-    callback(resp);
-}
-
-// -----------------------------------------------------------------------------
-// GET /api/v1/admin/quotes (Requires agency_manager or super_admin)
-// -----------------------------------------------------------------------------
-void AuthController::getAdminQuotes(const drogon::HttpRequestPtr &req,
-                                   std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
-    if (req->method() == drogon::Options) {
-        auto resp = drogon::HttpResponse::newHttpResponse();
-        callback(resp);
-        return;
-    }
-
-    std::string reqId = req->attributes()->get("request_id");
-    if (reqId.empty()) reqId = req->getHeader("X-Request-Id");
-
-    SessionRecord session;
-    Json::Value err;
-    drogon::HttpStatusCode status;
-
-    if (!authenticateSession(req, session, err, status)) {
-        if (!reqId.empty()) err["request_id"] = reqId;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
-        resp->setStatusCode(status);
-        callback(resp);
-        return;
-    }
-
-    // Privilege escalation prevention: editors cannot view or manage financial quotes
-    if (session.role != "super_admin" && session.role != "agency_manager") {
-        Json::Value rbacErr;
-        rbacErr["error"] = "Access forbidden. Role '" + session.role + "' is not authorized to access quotations.";
-        rbacErr["code"] = "FORBIDDEN_INSUFFICIENT_PERMISSIONS";
-        if (!reqId.empty()) rbacErr["request_id"] = reqId;
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(rbacErr);
-        resp->setStatusCode(drogon::k403Forbidden);
-        callback(resp);
-        return;
-    }
-
-    Json::Value list(Json::arrayValue);
-    {
-        Json::Value q1;
-        q1["id"] = "MN-QT-2026-001";
-        q1["client_name"] = "TechFlow Innovations";
-        q1["service_type"] = "Topic to Video + Shorts Package";
-        q1["total_amount_inr"] = 45000;
-        q1["status"] = "Sent";
-        list.append(q1);
-    }
-
-    Json::Value res;
-    res["status"] = "ok";
-    res["quotes"] = list;
-    if (!reqId.empty()) res["request_id"] = reqId;
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
-    resp->setStatusCode(drogon::k200OK);
-    callback(resp);
-}
-
-// -----------------------------------------------------------------------------
 // POST /api/v1/admin/users (Requires super_admin only; strictly prevents privilege escalation)
 // -----------------------------------------------------------------------------
 void AuthController::createStaffUser(const drogon::HttpRequestPtr &req,
@@ -893,10 +983,15 @@ void AuthController::createStaffUser(const drogon::HttpRequestPtr &req,
         return;
     }
 
-    std::string lowerEmail = toLower(newEmail);
-    {
-        std::lock_guard<std::mutex> lock(s_authMutex);
-        if (s_users.find(lowerEmail) != s_users.end()) {
+    UserRecord newUser;
+    newUser.email = newEmail;
+    newUser.fullName = newFullName;
+    newUser.role = newRole;
+    newUser.status = "active";
+    newUser.passwordHash = Security::hashPassword(newPassword);
+
+    insertStaffUser(newUser, [callback, reqId, newEmail, newFullName, newRole](InsertResult result) {
+        if (result == InsertResult::Conflict) {
             Json::Value conflictErr;
             conflictErr["error"] = "A staff account with this email already exists.";
             conflictErr["code"] = "USER_ALREADY_EXISTS";
@@ -907,30 +1002,34 @@ void AuthController::createStaffUser(const drogon::HttpRequestPtr &req,
             return;
         }
 
-        UserRecord newUser;
-        newUser.id = "u-" + Security::randomHex(8);
-        newUser.email = newEmail;
-        newUser.fullName = newFullName;
-        newUser.role = newRole;
-        newUser.status = "active";
-        newUser.passwordHash = Security::hashPassword(newPassword);
-        s_users[lowerEmail] = newUser;
-    }
+        if (result == InsertResult::Error) {
+            Json::Value dbErr;
+            dbErr["error"] = "Staff accounts are temporarily unavailable. Please try again shortly.";
+            dbErr["code"] = "AUTH_BACKEND_UNAVAILABLE";
+            if (!reqId.empty()) dbErr["request_id"] = reqId;
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(dbErr);
+            resp->setStatusCode(drogon::k503ServiceUnavailable);
+            callback(resp);
+            return;
+        }
 
-    Json::Value createdJson;
-    createdJson["email"] = newEmail;
-    createdJson["full_name"] = newFullName;
-    createdJson["role"] = newRole;
-    createdJson["status"] = "active";
+        refreshStaffCount();
 
-    Json::Value res;
-    res["success"] = true;
-    res["status"] = "ok";
-    res["message"] = "Staff account created successfully";
-    res["user"] = createdJson;
-    if (!reqId.empty()) res["request_id"] = reqId;
+        Json::Value createdJson;
+        createdJson["email"] = newEmail;
+        createdJson["full_name"] = newFullName;
+        createdJson["role"] = newRole;
+        createdJson["status"] = "active";
 
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
-    resp->setStatusCode(drogon::k201Created);
-    callback(resp);
+        Json::Value res;
+        res["success"] = true;
+        res["status"] = "ok";
+        res["message"] = "Staff account created successfully";
+        res["user"] = createdJson;
+        if (!reqId.empty()) res["request_id"] = reqId;
+
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+        resp->setStatusCode(drogon::k201Created);
+        callback(resp);
+    });
 }

@@ -17,9 +17,6 @@ if(Drogon_FOUND)
         controllers/CatalogController.cc
         controllers/LeadController.cc
         controllers/AuthController.cc
-        controllers/QuotationController.cc
-        controllers/ProjectController.cc
-        controllers/ContentController.cc
         controllers/LearningController.cc
         services/WhatsAppNotificationService.cc
     )
@@ -35,9 +32,6 @@ else()
         controllers/CatalogController.cc
         controllers/LeadController.cc
         controllers/AuthController.cc
-        controllers/QuotationController.cc
-        controllers/ProjectController.cc
-        controllers/ContentController.cc
         controllers/LearningController.cc
         services/WhatsAppNotificationService.cc
         compat/drogon_standalone.cc
@@ -60,9 +54,6 @@ add_executable(smoke_test
     controllers/CatalogController.cc
     controllers/LeadController.cc
     controllers/AuthController.cc
-    controllers/QuotationController.cc
-    controllers/ProjectController.cc
-    controllers/ContentController.cc
     controllers/LearningController.cc
     services/WhatsAppNotificationService.cc
     compat/drogon_standalone.cc
@@ -84,9 +75,6 @@ add_executable(benchmark
     controllers/CatalogController.cc
     controllers/LeadController.cc
     controllers/AuthController.cc
-    controllers/QuotationController.cc
-    controllers/ProjectController.cc
-    controllers/ContentController.cc
     controllers/LearningController.cc
     services/WhatsAppNotificationService.cc
     compat/drogon_standalone.cc

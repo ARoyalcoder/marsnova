@@ -4,11 +4,18 @@ import { cn } from '@/lib/utils';
 export interface FieldGroupProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export const FieldGroup = React.forwardRef<HTMLDivElement, FieldGroupProps>(
-  ({ className, ...props }, ref) => {
+  ({ className, style, ...props }, ref) => {
     return (
       <div
         ref={ref}
-        className={cn('flex flex-col gap-4 w-full', className)}
+        className={cn('flex flex-col gap-4 w-full field-group', className)}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1.25rem',
+          width: '100%',
+          ...style
+        }}
         {...props}
       />
     );
@@ -22,19 +29,26 @@ export interface FieldProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export const Field = React.forwardRef<HTMLDivElement, FieldProps>(
-  ({ className, orientation = 'vertical', 'data-invalid': dataInvalid, ...props }, ref) => {
+  ({ className, orientation = 'vertical', 'data-invalid': dataInvalid, style, ...props }, ref) => {
     return (
       <div
         ref={ref}
         data-invalid={dataInvalid}
         className={cn(
-          'w-full',
+          'w-full field-item',
           orientation === 'horizontal'
             ? 'flex flex-row items-center gap-3'
             : 'flex flex-col gap-1.5',
           dataInvalid && 'data-[invalid=true]:text-red-400',
           className
         )}
+        style={{
+          display: 'flex',
+          flexDirection: orientation === 'horizontal' ? 'row' : 'column',
+          gap: orientation === 'horizontal' ? '0.75rem' : '0.375rem',
+          width: '100%',
+          ...style
+        }}
         {...props}
       />
     );
@@ -45,7 +59,7 @@ Field.displayName = 'Field';
 export interface FieldLabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {}
 
 export const FieldLabel = React.forwardRef<HTMLLabelElement, FieldLabelProps>(
-  ({ className, ...props }, ref) => {
+  ({ className, style, ...props }, ref) => {
     return (
       <label
         ref={ref}
@@ -53,6 +67,14 @@ export const FieldLabel = React.forwardRef<HTMLLabelElement, FieldLabelProps>(
           'text-sm font-medium text-[var(--text-main,#F5F7FF)] leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
           className
         )}
+        style={{
+          display: 'inline-block',
+          fontSize: '0.875rem',
+          fontWeight: 600,
+          color: 'var(--text-main, #F5F7FF)',
+          marginBottom: '0.25rem',
+          ...style
+        }}
         {...props}
       />
     );

@@ -94,15 +94,12 @@ export const AboutPage: React.FC = () => {
 
         {/* Studio Showcase Card */}
         <div
+          className="about-showcase-grid responsive-card-padding"
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: '40px',
             alignItems: 'center',
             background: 'var(--bg-card)',
             border: '1px solid var(--border-highlight)',
             borderRadius: 'var(--radius-xl)',
-            padding: '48px',
             marginBottom: '60px'
           }}
         >

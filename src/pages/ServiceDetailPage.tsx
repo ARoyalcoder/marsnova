@@ -40,6 +40,8 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState<boolean>(false);
   const [retryCount, setRetryCount] = useState<number>(0);
+  const [selectedTier, setSelectedTier] = useState<'starter' | 'growth' | 'studio'>('starter');
+  const [selectedAddons, setSelectedAddons] = useState<string[]>(['thumbnail_pack']);
 
   // Connect to Drogon Backend via typed API client
   useEffect(() => {
@@ -173,6 +175,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
       <div style={{ padding: '80px 0' }}>
         <Container size="narrow">
           <EmptyState
+            headingLevel={1}
             title="Service Not Found"
             description={`We could not find a service matching "/services/${slug}". Please check our solutions directory for available services.`}
             action={{
@@ -215,7 +218,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
               {getServiceIcon(service.icon)}
             </div>
             <div>
-              <h1 style={{ fontSize: '38px', fontWeight: 800, color: '#fff', lineHeight: 1.15 }}>
+              <h1 style={{ fontSize: 'clamp(26px, 5vw, 38px)', fontWeight: 800, color: '#fff', lineHeight: 1.15 }}>
                 {service.title}
               </h1>
               <p style={{ color: 'var(--text-muted)', fontSize: '17px', maxWidth: '700px', marginTop: '8px' }}>
@@ -226,10 +229,10 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
         </div>
 
         {/* Content Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '40px', marginBottom: '80px' }}>
+        <div className="responsive-detail-grid" style={{ marginBottom: '80px' }}>
           {/* Left Column: Details, Features & Deliverables */}
           <div>
-            <Card style={{ padding: '36px', marginBottom: '32px' }}>
+            <Card className="responsive-card-padding" style={{ marginBottom: '32px' }}>
               <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 700, marginBottom: '16px' }}>
                 Overview & Process
               </h2>
@@ -239,7 +242,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
             </Card>
 
             {service.features && service.features.length > 0 && (
-              <Card style={{ padding: '36px', marginBottom: '32px' }}>
+              <Card className="responsive-card-padding" style={{ marginBottom: '32px' }}>
                 <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 700, marginBottom: '20px' }}>
                   What's Included
                 </h2>
@@ -257,7 +260,7 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
             )}
 
             {service.deliverables && service.deliverables.length > 0 && (
-              <Card style={{ padding: '36px' }}>
+              <Card className="responsive-card-padding">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
                   <PackageCheck size={20} color="var(--purple-glow)" />
                   <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 700 }}>
@@ -289,8 +292,8 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <Card
               variant="glow"
+              className="responsive-card-padding"
               style={{
-                padding: '36px',
                 background: 'linear-gradient(135deg, rgba(8, 15, 29, 0.95) 0%, rgba(16, 27, 43, 0.8) 100%)'
               }}
             >
@@ -345,6 +348,138 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({ onOpenReco
                 </a>
               </div>
             </Card>
+
+            {/* Interactive Scope & Production Timeline Estimator */}
+            {service.category !== 'Tech' && (
+              <Card
+                className="responsive-card-padding"
+                style={{
+                  background: 'var(--bg-deep)',
+                  border: '1px solid var(--border-highlight)'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h4 style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>
+                    Scope & Timeline Estimator
+                  </h4>
+                  <Badge variant="purple" style={{ fontSize: '10px' }}>
+                    Interactive
+                  </Badge>
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Production Tier:
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                    {[
+                      { key: 'starter', label: 'Starter' },
+                      { key: 'growth', label: 'Growth' },
+                      { key: 'studio', label: 'Studio' }
+                    ].map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => setSelectedTier(t.key as any)}
+                        style={{
+                          background: selectedTier === t.key ? 'var(--purple-glow)' : 'rgba(255, 255, 255, 0.05)',
+                          color: '#fff',
+                          border: selectedTier === t.key ? '1px solid var(--cyan-accent)' : '1px solid var(--border-muted)',
+                          borderRadius: '8px',
+                          padding: '6px 4px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Optional Add-ons:
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {[
+                      { id: 'express', label: 'Express Delivery (24-48 Hours)' },
+                      { id: '4k_master', label: '4K ProRes Master Grade' },
+                      { id: 'thumbnail_pack', label: 'High-CTR Thumbnail Pack' }
+                    ].map((addon) => {
+                      const checked = selectedAddons.includes(addon.id);
+                      return (
+                        <label
+                          key={addon.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontSize: '12px',
+                            color: checked ? '#fff' : 'var(--text-dim)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedAddons([...selectedAddons, addon.id]);
+                              } else {
+                                setSelectedAddons(selectedAddons.filter((id) => id !== addon.id));
+                              }
+                            }}
+                            style={{ accentColor: 'var(--cyan-accent)' }}
+                          />
+                          <span>{addon.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(0, 240, 255, 0.05)',
+                    border: '1px solid rgba(0, 240, 255, 0.2)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    fontSize: '12px',
+                    color: 'var(--text-white)',
+                    marginBottom: '14px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-dim)' }}>Estimated Timeline:</span>
+                    <strong style={{ color: 'var(--cyan-accent)' }}>
+                      {selectedAddons.includes('express')
+                        ? '24 - 48 Hours'
+                        : selectedTier === 'starter'
+                        ? '2 - 3 Business Days'
+                        : selectedTier === 'growth'
+                        ? '4 - 6 Business Days'
+                        : '7 - 10 Business Days'}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-dim)' }}>Scope Package:</span>
+                    <strong style={{ textTransform: 'capitalize' }}>
+                      {selectedTier} Tier ({selectedAddons.length} add-ons)
+                    </strong>
+                  </div>
+                </div>
+
+                <Link
+                  to={`/contact?service=${encodeURIComponent(service.title)}&tier=${encodeURIComponent(selectedTier)}`}
+                >
+                  <Button variant="secondary" size="sm" fullWidth>
+                    Enquire With Configured Scope ↗
+                  </Button>
+                </Link>
+              </Card>
+            )}
           </div>
         </div>
       </Container>

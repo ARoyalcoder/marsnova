@@ -6,6 +6,11 @@
 #include <iostream>
 #include <memory>
 #include <iomanip>
+#include <cmath>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace Json {
 
@@ -19,6 +24,59 @@ enum ValueType {
     arrayValue,
     objectValue
 };
+
+namespace detail {
+
+// JSON string output: escapes quotes, backslashes and every control character, and replaces any
+// invalid UTF-8 byte sequence with U+FFFD, so the result is always valid JSON no matter what text
+// a client submitted.
+inline void writeString(std::ostream &os, const std::string &s) {
+    static const char *hex = "0123456789abcdef";
+    os << '"';
+    for (size_t i = 0; i < s.size();) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c == '"') { os << "\\\""; ++i; }
+        else if (c == '\\') { os << "\\\\"; ++i; }
+        else if (c == '\n') { os << "\\n"; ++i; }
+        else if (c == '\r') { os << "\\r"; ++i; }
+        else if (c == '\t') { os << "\\t"; ++i; }
+        else if (c == '\b') { os << "\\b"; ++i; }
+        else if (c == '\f') { os << "\\f"; ++i; }
+        else if (c < 0x20) { os << "\\u00" << hex[c >> 4] << hex[c & 0x0f]; ++i; }
+        else if (c < 0x80) { os << static_cast<char>(c); ++i; }
+        else {
+            int len = 0;
+            if (c >= 0xC2 && c <= 0xDF) len = 2;
+            else if (c >= 0xE0 && c <= 0xEF) len = 3;
+            else if (c >= 0xF0 && c <= 0xF4) len = 4;
+            bool ok = len > 0 && i + static_cast<size_t>(len) <= s.size();
+            for (int k = 1; ok && k < len; ++k) ok = (static_cast<unsigned char>(s[i + k]) & 0xC0) == 0x80;
+            if (ok && len >= 3) {
+                const unsigned char c1 = static_cast<unsigned char>(s[i + 1]);
+                if (len == 3 && ((c == 0xE0 && c1 < 0xA0) || (c == 0xED && c1 >= 0xA0))) ok = false;  // overlong / surrogate
+                if (len == 4 && ((c == 0xF0 && c1 < 0x90) || (c == 0xF4 && c1 >= 0x90))) ok = false;  // overlong / > U+10FFFF
+            }
+            if (ok) { os.write(s.data() + i, len); i += static_cast<size_t>(len); }
+            else { os << "\\ufffd"; ++i; }
+        }
+    }
+    os << '"';
+}
+
+// Shortest decimal text that parses back to exactly the same double (the default stream
+// precision of 6 digits silently rounded 1234567.89 to "1.23457e+06"). NaN and Infinity are not
+// valid JSON, so they become null.
+inline std::string formatDouble(double d) {
+    if (!std::isfinite(d)) return "null";
+    char buf[40];
+    for (int precision = 15; precision <= 17; ++precision) {
+        std::snprintf(buf, sizeof(buf), "%.*g", precision, d);
+        if (std::strtod(buf, nullptr) == d) break;
+    }
+    return buf;
+}
+
+}  // namespace detail
 
 class Value {
 public:
@@ -174,18 +232,9 @@ public:
             case nullValue: os << "null"; break;
             case booleanValue: os << (bool_val_ ? "true" : "false"); break;
             case intValue: os << int_val_; break;
-            case realValue: os << real_val_; break;
+            case realValue: os << detail::formatDouble(real_val_); break;
             case stringValue: {
-                os << "\"";
-                for (char c : str_val_) {
-                    if (c == '"') os << "\\\"";
-                    else if (c == '\\') os << "\\\\";
-                    else if (c == '\n') os << "\\n";
-                    else if (c == '\r') os << "\\r";
-                    else if (c == '\t') os << "\\t";
-                    else os << c;
-                }
-                os << "\"";
+                detail::writeString(os, str_val_);
                 break;
             }
             case arrayValue: {
@@ -202,7 +251,8 @@ public:
                 size_t i = 0;
                 for (const auto &kv : obj_val_) {
                     if (i++ > 0) os << ", ";
-                    os << "\"" << kv.first << "\": ";
+                    detail::writeString(os, kv.first);
+                    os << ": ";
                     kv.second.writeJson(os, indent + 2);
                 }
                 os << "}";
@@ -212,120 +262,250 @@ public:
     }
 };
 
-// Simple JSON parser
-inline bool parseJson(const std::string &str, Value &root) {
-    // Basic JSON parser for objects and values
-    size_t i = 0;
-    auto skipWhitespace = [&]() {
-        while (i < str.size() && (str[i] == ' ' || str[i] == '\t' || str[i] == '\n' || str[i] == '\r')) {
-            i++;
-        }
-    };
+namespace detail {
 
-    std::function<Value()> parseValue;
+// Strict RFC 8259 parser (plus // and /* */ comments and a leading UTF-8 BOM, which jsoncpp also
+// accepts). Every loop either consumes input or fails, nesting depth and node count are capped,
+// and any syntax error makes parseJson return false. The previous parser never advanced on an
+// unexpected character inside an array, so a 3-byte body such as `[x]` spun a thread forever
+// while appending to memory, and 20,000 nested `[` overflowed the stack and killed the process.
+class Parser {
+public:
+    explicit Parser(const std::string &text) : s_(text) {}
 
-    auto parseString = [&]() -> std::string {
-        if (str[i] == '"') i++;
-        std::string s;
-        while (i < str.size()) {
-            if (str[i] == '\\' && i + 1 < str.size()) {
-                i++;
-                if (str[i] == 'n') s += '\n';
-                else if (str[i] == 'r') s += '\r';
-                else if (str[i] == 't') s += '\t';
-                else s += str[i];
-            } else if (str[i] == '"') {
-                i++;
-                break;
-            } else {
-                s += str[i];
-            }
-            i++;
+    bool parse(Value &out) {
+        if (s_.size() >= 3 && static_cast<unsigned char>(s_[0]) == 0xEF && static_cast<unsigned char>(s_[1]) == 0xBB &&
+            static_cast<unsigned char>(s_[2]) == 0xBF) {
+            i_ = 3;
         }
-        return s;
-    };
-
-    auto parseObject = [&]() -> Value {
-        Value obj(objectValue);
-        i++; // skip '{'
-        skipWhitespace();
-        if (i < str.size() && str[i] == '}') {
-            i++;
-            return obj;
-        }
-        while (i < str.size()) {
-            skipWhitespace();
-            if (str[i] != '"') break;
-            std::string key = parseString();
-            skipWhitespace();
-            if (i < str.size() && str[i] == ':') i++;
-            skipWhitespace();
-            Value val = parseValue();
-            obj[key] = val;
-            skipWhitespace();
-            if (i < str.size() && str[i] == ',') {
-                i++;
-            } else if (i < str.size() && str[i] == '}') {
-                i++;
-                break;
-            }
-        }
-        return obj;
-    };
-
-    auto parseArray = [&]() -> Value {
-        Value arr(arrayValue);
-        i++; // skip '['
-        skipWhitespace();
-        if (i < str.size() && str[i] == ']') {
-            i++;
-            return arr;
-        }
-        while (i < str.size()) {
-            skipWhitespace();
-            Value val = parseValue();
-            arr.append(val);
-            skipWhitespace();
-            if (i < str.size() && str[i] == ',') {
-                i++;
-            } else if (i < str.size() && str[i] == ']') {
-                i++;
-                break;
-            }
-        }
-        return arr;
-    };
-
-    parseValue = [&]() -> Value {
-        skipWhitespace();
-        if (i >= str.size()) return Value();
-        char c = str[i];
-        if (c == '{') return parseObject();
-        if (c == '[') return parseArray();
-        if (c == '"') return Value(parseString());
-        if (c == 't' && str.substr(i, 4) == "true") { i += 4; return Value(true); }
-        if (c == 'f' && str.substr(i, 5) == "false") { i += 5; return Value(false); }
-        if (c == 'n' && str.substr(i, 4) == "null") { i += 4; return Value(); }
-        // Number
-        size_t start = i;
-        if (str[i] == '-') i++;
-        while (i < str.size() && (isdigit(str[i]) || str[i] == '.' || str[i] == 'e' || str[i] == 'E')) {
-            i++;
-        }
-        std::string numStr = str.substr(start, i - start);
-        if (numStr.find('.') != std::string::npos) {
-            try { return Value(std::stod(numStr)); } catch (...) { return Value(0.0); }
-        } else {
-            try { return Value(std::stoll(numStr)); } catch (...) { return Value(0); }
-        }
-    };
-
-    skipWhitespace();
-    if (i < str.size()) {
-        root = parseValue();
+        if (!skipSpace() || i_ >= s_.size()) return false;
+        Value v;
+        if (!parseValue(v, 0)) return false;
+        if (!skipSpace() || i_ != s_.size()) return false;  // trailing garbage
+        out = std::move(v);
         return true;
     }
-    return false;
+
+private:
+    static constexpr int kMaxDepth = 128;
+    static constexpr size_t kMaxNodes = 200000;
+
+    const std::string &s_;
+    size_t i_{0};
+    size_t nodes_{0};
+
+    static bool isDigit(char c) { return c >= '0' && c <= '9'; }
+
+    // Returns false only for an unterminated block comment.
+    bool skipSpace() {
+        for (;;) {
+            while (i_ < s_.size() && (s_[i_] == ' ' || s_[i_] == '\t' || s_[i_] == '\n' || s_[i_] == '\r')) ++i_;
+            if (i_ + 1 < s_.size() && s_[i_] == '/' && s_[i_ + 1] == '/') {
+                while (i_ < s_.size() && s_[i_] != '\n') ++i_;
+                continue;
+            }
+            if (i_ + 1 < s_.size() && s_[i_] == '/' && s_[i_ + 1] == '*') {
+                const size_t end = s_.find("*/", i_ + 2);
+                if (end == std::string::npos) return false;
+                i_ = end + 2;
+                continue;
+            }
+            return true;
+        }
+    }
+
+    bool matchLiteral(const char *literal) {
+        const size_t len = std::strlen(literal);
+        if (s_.compare(i_, len, literal) == 0) {
+            i_ += len;
+            return true;
+        }
+        return false;
+    }
+
+    bool parseValue(Value &out, int depth) {
+        if (depth > kMaxDepth || ++nodes_ > kMaxNodes) return false;
+        if (!skipSpace() || i_ >= s_.size()) return false;
+        const char c = s_[i_];
+        if (c == '{') return parseObject(out, depth + 1);
+        if (c == '[') return parseArray(out, depth + 1);
+        if (c == '"') {
+            std::string str;
+            if (!parseString(str)) return false;
+            out = Value(str);
+            return true;
+        }
+        if (matchLiteral("true")) { out = Value(true); return true; }
+        if (matchLiteral("false")) { out = Value(false); return true; }
+        if (matchLiteral("null")) { out = Value(); return true; }
+        return parseNumber(out);
+    }
+
+    bool parseObject(Value &out, int depth) {
+        out = Value(objectValue);
+        ++i_;  // '{'
+        if (!skipSpace()) return false;
+        if (i_ < s_.size() && s_[i_] == '}') { ++i_; return true; }
+        for (;;) {
+            if (!skipSpace() || i_ >= s_.size() || s_[i_] != '"') return false;
+            std::string key;
+            if (!parseString(key)) return false;
+            if (!skipSpace() || i_ >= s_.size() || s_[i_] != ':') return false;
+            ++i_;
+            Value child;
+            if (!parseValue(child, depth)) return false;
+            out.obj_val_[key] = std::move(child);
+            if (!skipSpace() || i_ >= s_.size()) return false;
+            if (s_[i_] == ',') { ++i_; continue; }
+            if (s_[i_] == '}') { ++i_; return true; }
+            return false;
+        }
+    }
+
+    bool parseArray(Value &out, int depth) {
+        out = Value(arrayValue);
+        ++i_;  // '['
+        if (!skipSpace()) return false;
+        if (i_ < s_.size() && s_[i_] == ']') { ++i_; return true; }
+        for (;;) {
+            Value child;
+            if (!parseValue(child, depth)) return false;
+            out.arr_val_.push_back(std::move(child));
+            if (!skipSpace() || i_ >= s_.size()) return false;
+            if (s_[i_] == ',') { ++i_; continue; }
+            if (s_[i_] == ']') { ++i_; return true; }
+            return false;
+        }
+    }
+
+    bool parseHex4(unsigned &cp) {
+        if (i_ + 4 > s_.size()) return false;
+        unsigned v = 0;
+        for (int k = 0; k < 4; ++k) {
+            const char h = s_[i_ + static_cast<size_t>(k)];
+            v <<= 4;
+            if (h >= '0' && h <= '9') v |= static_cast<unsigned>(h - '0');
+            else if (h >= 'a' && h <= 'f') v |= static_cast<unsigned>(h - 'a' + 10);
+            else if (h >= 'A' && h <= 'F') v |= static_cast<unsigned>(h - 'A' + 10);
+            else return false;
+        }
+        i_ += 4;
+        cp = v;
+        return true;
+    }
+
+    static void appendUtf8(std::string &out, unsigned cp) {
+        if (cp < 0x80) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+
+    bool parseString(std::string &out) {
+        ++i_;  // opening quote
+        out.clear();
+        while (i_ < s_.size()) {
+            const char c = s_[i_++];
+            if (c == '"') return true;
+            if (c != '\\') { out.push_back(c); continue; }
+            if (i_ >= s_.size()) return false;
+            const char e = s_[i_++];
+            switch (e) {
+                case '"': out.push_back('"'); break;
+                case '\\': out.push_back('\\'); break;
+                case '/': out.push_back('/'); break;
+                case 'b': out.push_back('\b'); break;
+                case 'f': out.push_back('\f'); break;
+                case 'n': out.push_back('\n'); break;
+                case 'r': out.push_back('\r'); break;
+                case 't': out.push_back('\t'); break;
+                case 'u': {
+                    unsigned cp = 0;
+                    if (!parseHex4(cp)) return false;
+                    if (cp >= 0xD800 && cp <= 0xDBFF) {
+                        // High surrogate: combine with a following low surrogate, else U+FFFD.
+                        unsigned low = 0;
+                        const size_t save = i_;
+                        if (i_ + 1 < s_.size() && s_[i_] == '\\' && s_[i_ + 1] == 'u') {
+                            i_ += 2;
+                            if (parseHex4(low) && low >= 0xDC00 && low <= 0xDFFF) {
+                                cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+                            } else {
+                                i_ = save;
+                                cp = 0xFFFD;
+                            }
+                        } else {
+                            cp = 0xFFFD;
+                        }
+                    } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                        cp = 0xFFFD;  // lone low surrogate
+                    }
+                    appendUtf8(out, cp);
+                    break;
+                }
+                default:
+                    return false;  // unknown escape
+            }
+        }
+        return false;  // unterminated string
+    }
+
+    bool parseNumber(Value &out) {
+        const size_t start = i_;
+        if (i_ < s_.size() && s_[i_] == '-') ++i_;
+        if (i_ >= s_.size()) return false;
+        if (s_[i_] == '0') {
+            ++i_;
+        } else if (s_[i_] >= '1' && s_[i_] <= '9') {
+            while (i_ < s_.size() && isDigit(s_[i_])) ++i_;
+        } else {
+            return false;
+        }
+        bool isReal = false;
+        if (i_ < s_.size() && s_[i_] == '.') {
+            isReal = true;
+            ++i_;
+            const size_t digits = i_;
+            while (i_ < s_.size() && isDigit(s_[i_])) ++i_;
+            if (i_ == digits) return false;
+        }
+        if (i_ < s_.size() && (s_[i_] == 'e' || s_[i_] == 'E')) {
+            isReal = true;
+            ++i_;
+            if (i_ < s_.size() && (s_[i_] == '+' || s_[i_] == '-')) ++i_;
+            const size_t digits = i_;
+            while (i_ < s_.size() && isDigit(s_[i_])) ++i_;
+            if (i_ == digits) return false;
+        }
+        const std::string text = s_.substr(start, i_ - start);
+        if (!isReal) {
+            errno = 0;
+            const long long v = std::strtoll(text.c_str(), nullptr, 10);
+            if (errno != ERANGE) { out = Value(v); return true; }
+        }
+        const double d = std::strtod(text.c_str(), nullptr);
+        if (!std::isfinite(d)) return false;
+        out = Value(d);
+        return true;
+    }
+};
+
+}  // namespace detail
+
+inline bool parseJson(const std::string &str, Value &root) {
+    detail::Parser parser(str);
+    return parser.parse(root);
 }
 
 class CharReaderBuilder {

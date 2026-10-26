@@ -5,13 +5,13 @@
 #include "../controllers/CatalogController.h"
 #include "../controllers/LeadController.h"
 #include "../controllers/AuthController.h"
-#include "../controllers/QuotationController.h"
-#include "../controllers/ProjectController.h"
-#include "../controllers/ContentController.h"
 #include "../controllers/LearningController.h"
+#include "../utils/Security.h"
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
+#include <cctype>
+#include <atomic>
 #include <random>
 #include <chrono>
 #include <thread>
@@ -22,6 +22,7 @@
 #pragma comment(lib, "ws2_32.lib")
 #else
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #endif
@@ -29,13 +30,36 @@
 namespace drogon {
 
 static std::string generateRequestId() {
-    static std::mt19937_64 rng(std::random_device{}());
-    static std::uniform_int_distribution<uint64_t> dist;
-    uint64_t r1 = dist(rng);
-    uint64_t r2 = dist(rng);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "req_%016llx%016llx", (unsigned long long)r1, (unsigned long long)r2);
-    return std::string(buf);
+    // Not a secret, but it must not repeat after a restart (std::random_device is deterministic on
+    // MinGW), so it comes from the operating system's random source like every other token.
+    return "req_" + Security::randomHex(16);
+}
+
+// Percent-decoding for query strings (application/x-www-form-urlencoded, where '+' means space).
+// The shim used to hand the raw text to the controllers, so "category=Social+Media" or
+// "category=Business%20Promotion" never matched the stored value "Social Media" and every
+// multi-word filter on the Services, Portfolio and Lab pages returned nothing.
+static std::string urlDecode(const std::string &in) {
+    auto hexVal = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        const char c = in[i];
+        if (c == '+') {
+            out.push_back(' ');
+        } else if (c == '%' && i + 2 < in.size() && hexVal(in[i + 1]) >= 0 && hexVal(in[i + 2]) >= 0) {
+            out.push_back(static_cast<char>(hexVal(in[i + 1]) * 16 + hexVal(in[i + 2])));
+            i += 2;
+        } else {
+            out.push_back(c);
+        }
+    }
+    return out;
 }
 
 void HttpAppFramework::loadConfigFile(const std::string &path) {
@@ -92,6 +116,10 @@ void HttpAppFramework::handleRequest(const HttpRequestPtr &req, std::function<vo
             advice(req, resp);
         }
 
+        // CORS is decided by the application's post-handling advice (main.cc), which checks the
+        // request Origin against an allowlist. This used to echo ANY Origin back with
+        // Access-Control-Allow-Credentials: true, which let any website make authenticated
+        // cross-origin requests; the cors_allowed_origins setting was loaded but never read.
         userCb(resp);
     };
 
@@ -107,9 +135,9 @@ void HttpAppFramework::handleRequest(const HttpRequestPtr &req, std::function<vo
         while (std::getline(ss, token, '&')) {
             size_t eq = token.find('=');
             if (eq != std::string::npos) {
-                req->setParameter(token.substr(0, eq), token.substr(eq + 1));
+                req->setParameter(urlDecode(token.substr(0, eq)), urlDecode(token.substr(eq + 1)));
             } else {
-                req->setParameter(token, "");
+                req->setParameter(urlDecode(token), "");
             }
         }
     }
@@ -120,6 +148,14 @@ void HttpAppFramework::handleRequest(const HttpRequestPtr &req, std::function<vo
     if (m == HttpMethod::Options) {
         auto resp = HttpResponse::newHttpResponse();
         resp->setStatusCode(k200OK);
+        wrappedCb(resp);
+        return;
+    }
+
+    // Favicon handler
+    if (p == "/favicon.ico") {
+        auto resp = HttpResponse::newHttpResponse();
+        resp->setStatusCode(k204NoContent);
         wrappedCb(resp);
         return;
     }
@@ -180,107 +216,6 @@ void HttpAppFramework::handleRequest(const HttpRequestPtr &req, std::function<vo
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Quotations Endpoints (/api/v1/quotations)
-    // -------------------------------------------------------------------------
-    if (p == "/api/v1/quotations") {
-        QuotationController ctrl;
-        if (m == HttpMethod::Post || m == HttpMethod::Options) {
-            ctrl.createQuotation(req, std::move(wrappedCb));
-            return;
-        } else if (m == HttpMethod::Get) {
-            ctrl.listQuotations(req, std::move(wrappedCb));
-            return;
-        }
-    }
-
-    if (p.rfind("/api/v1/quotations/", 0) == 0) {
-        std::string sub = p.substr(std::string("/api/v1/quotations/").length());
-        QuotationController ctrl;
-
-        // POST /api/v1/quotations/:id/status
-        size_t statusPos = sub.find("/status");
-        if (statusPos != std::string::npos) {
-            std::string quoteId = sub.substr(0, statusPos);
-            ctrl.updateQuotationStatus(req, std::move(wrappedCb), quoteId);
-            return;
-        }
-
-        // POST /api/v1/quotations/:id/revisions
-        size_t revPos = sub.find("/revisions");
-        if (revPos != std::string::npos) {
-            std::string quoteId = sub.substr(0, revPos);
-            ctrl.createQuotationRevision(req, std::move(wrappedCb), quoteId);
-            return;
-        }
-
-        // GET /api/v1/quotations/:id
-        if (m == HttpMethod::Get) {
-            ctrl.getQuotationDetails(req, std::move(wrappedCb), sub);
-            return;
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Projects Endpoints (/api/v1/projects)
-    // -------------------------------------------------------------------------
-    if (p == "/api/v1/projects") {
-        ProjectController ctrl;
-        if (m == HttpMethod::Post || m == HttpMethod::Options) {
-            ctrl.createProject(req, std::move(wrappedCb));
-            return;
-        } else if (m == HttpMethod::Get) {
-            ctrl.listProjects(req, std::move(wrappedCb));
-            return;
-        }
-    }
-
-    if (p.rfind("/api/v1/projects/", 0) == 0) {
-        std::string sub = p.substr(std::string("/api/v1/projects/").length());
-        ProjectController ctrl;
-
-        // POST /api/v1/projects/:id/status
-        size_t statusPos = sub.find("/status");
-        if (statusPos != std::string::npos) {
-            std::string projId = sub.substr(0, statusPos);
-            ctrl.updateProjectStatus(req, std::move(wrappedCb), projId);
-            return;
-        }
-
-        // DELETE /api/v1/projects/:id/assignments/:userId
-        size_t asgnPos = sub.find("/assignments");
-        if (asgnPos != std::string::npos) {
-            std::string projId = sub.substr(0, asgnPos);
-            std::string afterAsgn = sub.substr(asgnPos + std::string("/assignments").length());
-            if (afterAsgn.rfind("/", 0) == 0 && afterAsgn.length() > 1) {
-                std::string userId = afterAsgn.substr(1);
-                if (m == HttpMethod::Delete || m == HttpMethod::Options) {
-                    ctrl.removeStaff(req, std::move(wrappedCb), projId, userId);
-                    return;
-                }
-            } else {
-                if (m == HttpMethod::Post || m == HttpMethod::Options) {
-                    ctrl.assignStaff(req, std::move(wrappedCb), projId);
-                    return;
-                }
-            }
-        }
-
-        // POST /api/v1/projects/:id/deliverables
-        size_t delivPos = sub.find("/deliverables");
-        if (delivPos != std::string::npos) {
-            std::string projId = sub.substr(0, delivPos);
-            ctrl.updateDeliverables(req, std::move(wrappedCb), projId);
-            return;
-        }
-
-        // GET /api/v1/projects/:id
-        if (m == HttpMethod::Get) {
-            ctrl.getProjectDetails(req, std::move(wrappedCb), sub);
-            return;
-        }
-    }
-
     if (p == "/api/v1/auth/login") {
         AuthController ctrl;
         ctrl.login(req, std::move(wrappedCb));
@@ -299,209 +234,10 @@ void HttpAppFramework::handleRequest(const HttpRequestPtr &req, std::function<vo
         return;
     }
 
-    if (p == "/api/v1/admin/overview") {
-        AuthController ctrl;
-        ctrl.getAdminOverview(req, std::move(wrappedCb));
-        return;
-    }
-
-    if (p == "/api/v1/admin/quotes") {
-        AuthController ctrl;
-        ctrl.getAdminQuotes(req, std::move(wrappedCb));
-        return;
-    }
-
     if (p == "/api/v1/admin/users") {
         AuthController ctrl;
         ctrl.createStaffUser(req, std::move(wrappedCb));
         return;
-    }
-
-    // --- Content Management: Services ---
-    if (p == "/api/v1/admin/services") {
-        ContentController ctrl;
-        if (m == HttpMethod::Get) ctrl.listServicesAdmin(req, std::move(wrappedCb));
-        else ctrl.createService(req, std::move(wrappedCb));
-        return;
-    }
-
-    if (p.rfind("/api/v1/admin/services/", 0) == 0) {
-        std::string sub = p.substr(std::string("/api/v1/admin/services/").length());
-        ContentController ctrl;
-        size_t pubPos = sub.find("/publish");
-        if (pubPos != std::string::npos) {
-            std::string id = sub.substr(0, pubPos);
-            ctrl.publishService(req, std::move(wrappedCb), id);
-            return;
-        }
-        size_t archPos = sub.find("/archive");
-        if (archPos != std::string::npos) {
-            std::string id = sub.substr(0, archPos);
-            ctrl.archiveService(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (m == HttpMethod::Delete) {
-            ctrl.deleteService(req, std::move(wrappedCb), sub);
-            return;
-        }
-        ctrl.updateService(req, std::move(wrappedCb), sub);
-        return;
-    }
-
-    // --- Content Management: Portfolio ---
-    if (p == "/api/v1/admin/portfolio") {
-        ContentController ctrl;
-        if (m == HttpMethod::Get) ctrl.listPortfolioAdmin(req, std::move(wrappedCb));
-        else ctrl.createPortfolio(req, std::move(wrappedCb));
-        return;
-    }
-
-    if (p.rfind("/api/v1/admin/portfolio/", 0) == 0) {
-        std::string sub = p.substr(std::string("/api/v1/admin/portfolio/").length());
-        ContentController ctrl;
-        size_t pubPos = sub.find("/publish");
-        if (pubPos != std::string::npos) {
-            std::string id = sub.substr(0, pubPos);
-            ctrl.publishPortfolio(req, std::move(wrappedCb), id);
-            return;
-        }
-        size_t archPos = sub.find("/archive");
-        if (archPos != std::string::npos) {
-            std::string id = sub.substr(0, archPos);
-            ctrl.archivePortfolio(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (m == HttpMethod::Delete) {
-            ctrl.deletePortfolio(req, std::move(wrappedCb), sub);
-            return;
-        }
-        ctrl.updatePortfolio(req, std::move(wrappedCb), sub);
-        return;
-    }
-
-    // --- Content Management: Courses ---
-    if (p == "/api/v1/admin/courses") {
-        ContentController ctrl;
-        if (m == HttpMethod::Get) ctrl.listCoursesAdmin(req, std::move(wrappedCb));
-        else ctrl.createCourse(req, std::move(wrappedCb));
-        return;
-    }
-
-    if (p.rfind("/api/v1/admin/courses/", 0) == 0) {
-        std::string sub = p.substr(std::string("/api/v1/admin/courses/").length());
-        ContentController ctrl;
-
-        // /api/v1/admin/courses/:courseId/lessons
-        size_t lesPos = sub.find("/lessons");
-        if (lesPos != std::string::npos) {
-            std::string courseId = sub.substr(0, lesPos);
-            if (m == HttpMethod::Get) ctrl.listLessonsAdmin(req, std::move(wrappedCb), courseId);
-            else ctrl.createLesson(req, std::move(wrappedCb), courseId);
-            return;
-        }
-
-        size_t pubPos = sub.find("/publish");
-        if (pubPos != std::string::npos) {
-            std::string id = sub.substr(0, pubPos);
-            ctrl.publishCourse(req, std::move(wrappedCb), id);
-            return;
-        }
-        size_t archPos = sub.find("/archive");
-        if (archPos != std::string::npos) {
-            std::string id = sub.substr(0, archPos);
-            ctrl.archiveCourse(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (m == HttpMethod::Delete) {
-            ctrl.deleteCourse(req, std::move(wrappedCb), sub);
-            return;
-        }
-        ctrl.updateCourse(req, std::move(wrappedCb), sub);
-        return;
-    }
-
-    // --- Content Management: Lessons ---
-    if (p.rfind("/api/v1/admin/lessons/", 0) == 0) {
-        std::string sub = p.substr(std::string("/api/v1/admin/lessons/").length());
-        ContentController ctrl;
-        size_t pubPos = sub.find("/publish");
-        if (pubPos != std::string::npos) {
-            std::string id = sub.substr(0, pubPos);
-            ctrl.publishLesson(req, std::move(wrappedCb), id);
-            return;
-        }
-        size_t archPos = sub.find("/archive");
-        if (archPos != std::string::npos) {
-            std::string id = sub.substr(0, archPos);
-            ctrl.archiveLesson(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (m == HttpMethod::Delete) {
-            ctrl.deleteLesson(req, std::move(wrappedCb), sub);
-            return;
-        }
-        ctrl.updateLesson(req, std::move(wrappedCb), sub);
-        return;
-    }
-
-    // --- Content Management: Media Storage ---
-    if (p == "/api/v1/admin/media/upload") {
-        ContentController ctrl;
-        ctrl.uploadMedia(req, std::move(wrappedCb));
-        return;
-    }
-
-    if (p == "/api/v1/admin/media") {
-        ContentController ctrl;
-        ctrl.listMediaAdmin(req, std::move(wrappedCb));
-        return;
-    }
-
-    // Recovery Cases Admin
-    if (p == "/api/v1/admin/recovery/cases") {
-        RecoveryController ctrl;
-        ctrl.listCasesAdmin(req, std::move(wrappedCb));
-        return;
-    }
-
-    if (p.rfind("/api/v1/admin/recovery/cases/", 0) == 0) {
-        std::string sub = p.substr(std::string("/api/v1/admin/recovery/cases/").length());
-        RecoveryController ctrl;
-        auto slash = sub.find('/');
-        if (slash == std::string::npos) {
-            ctrl.getCaseAdmin(req, std::move(wrappedCb), sub);
-            return;
-        }
-        std::string id = sub.substr(0, slash);
-        std::string action = sub.substr(slash + 1);
-        if (action == "physical-receipt") {
-            ctrl.confirmPhysicalReceipt(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (action == "diagnosis") {
-            ctrl.recordDiagnosis(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (action == "quotation") {
-            ctrl.issueQuotation(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (action == "quotation-decision") {
-            ctrl.decideQuotation(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (action == "transition") {
-            ctrl.transitionStatus(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (action == "custody") {
-            ctrl.transferCustody(req, std::move(wrappedCb), id);
-            return;
-        }
-        if (action == "return") {
-            ctrl.returnDevice(req, std::move(wrappedCb), id);
-            return;
-        }
     }
 
     if (p == "/api/v1/services") {
@@ -531,14 +267,6 @@ void HttpAppFramework::handleRequest(const HttpRequestPtr &req, std::function<vo
 
     if (p.rfind("/api/v1/courses/", 0) == 0) {
         std::string sub = p.substr(std::string("/api/v1/courses/").length());
-        size_t lesPos = sub.find("/lessons/");
-        if (lesPos != std::string::npos) {
-            std::string courseSlug = sub.substr(0, lesPos);
-            std::string lessonSlug = sub.substr(lesPos + std::string("/lessons/").length());
-            ContentController ctrl;
-            ctrl.getPublicLesson(req, std::move(wrappedCb), courseSlug, lessonSlug);
-            return;
-        }
         CatalogController ctrl;
         ctrl.getCourseBySlug(req, std::move(wrappedCb), sub);
         return;
@@ -641,6 +369,108 @@ void HttpAppFramework::handleRequest(const HttpRequestPtr &req, std::function<vo
     }
 }
 
+// -----------------------------------------------------------------------------
+// Connection handling limits. Every connection gets its own thread and the old reader accepted
+// any header or body size with no timeout, so a few idle sockets or one huge Content-Length could
+// exhaust threads or memory.
+// -----------------------------------------------------------------------------
+#if defined(_WIN32)
+using SocketHandle = SOCKET;
+#else
+using SocketHandle = int;
+#endif
+
+static std::atomic<int> s_activeConnections{0};
+static const int kMaxConnections = 256;
+static const size_t kMaxHeaderBytes = 16 * 1024;
+static const int kRecvTimeoutMs = 30000;
+
+static void closeSocketHandle(SocketHandle fd) {
+#if defined(_WIN32)
+    closesocket(fd);
+#else
+    close(fd);
+#endif
+}
+
+static void setRecvTimeout(SocketHandle fd, int ms);
+
+// Closing a socket that still has unread request data makes TCP send a reset, and a reset can
+// destroy the error response that was just written, so a client that sent too much would see a
+// dropped connection instead of the 413/431 explaining why. Half-close first, then discard
+// whatever is still arriving for a bounded time/size, then close.
+static void gracefulClose(SocketHandle fd) {
+#if defined(_WIN32)
+    shutdown(fd, SD_SEND);
+#else
+    shutdown(fd, SHUT_WR);
+#endif
+    setRecvTimeout(fd, 1000);
+    char sink[4096];
+    size_t drained = 0;
+    while (drained < (1u << 20)) {
+        const int n = static_cast<int>(recv(fd, sink, sizeof(sink), 0));
+        if (n <= 0) break;
+        drained += static_cast<size_t>(n);
+    }
+    closeSocketHandle(fd);
+}
+
+static void setRecvTimeout(SocketHandle fd, int ms) {
+#if defined(_WIN32)
+    DWORD timeout = static_cast<DWORD>(ms);
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&timeout), sizeof(timeout));
+#else
+    struct timeval tv;
+    tv.tv_sec = ms / 1000;
+    tv.tv_usec = (ms % 1000) * 1000;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
+}
+
+static void sendAll(SocketHandle fd, const std::string &data) {
+    size_t sent = 0;
+    while (sent < data.size()) {
+        const int n = static_cast<int>(send(fd, data.data() + sent, static_cast<int>(data.size() - sent), 0));
+        if (n <= 0) return;
+        sent += static_cast<size_t>(n);
+    }
+}
+
+static void sendSimpleResponse(SocketHandle fd, int status, const char *reason, const std::string &jsonBody) {
+    std::ostringstream ss;
+    ss << "HTTP/1.1 " << status << " " << reason << "\r\n"
+       << "Content-Type: application/json; charset=utf-8\r\n"
+       << "Content-Length: " << jsonBody.size() << "\r\n"
+       << "Connection: close\r\n\r\n"
+       << jsonBody;
+    sendAll(fd, ss.str());
+}
+
+// Parses sizes such as "25M", "512k" or "1048576" (the format of client_max_body_size).
+static size_t parseSizeLimit(const std::string &text, size_t fallback) {
+    size_t i = 0;
+    unsigned long long n = 0;
+    bool any = false;
+    while (i < text.size() && std::isdigit(static_cast<unsigned char>(text[i]))) {
+        n = n * 10 + static_cast<unsigned long long>(text[i] - '0');
+        any = true;
+        ++i;
+        if (n > (1ULL << 40)) return fallback;
+    }
+    if (!any) return fallback;
+    unsigned long long multiplier = 1;
+    if (i < text.size()) {
+        const char unit = static_cast<char>(std::tolower(static_cast<unsigned char>(text[i])));
+        if (unit == 'k') multiplier = 1024ULL;
+        else if (unit == 'm') multiplier = 1024ULL * 1024ULL;
+        else if (unit == 'g') multiplier = 1024ULL * 1024ULL * 1024ULL;
+    }
+    const unsigned long long total = n * multiplier;
+    if (total == 0 || total > (1ULL << 31)) return fallback;
+    return static_cast<size_t>(total);
+}
+
 void HttpAppFramework::run() {
     std::string host = "0.0.0.0";
     int port = 8080;
@@ -731,18 +561,23 @@ void HttpAppFramework::run() {
 
     std::cout << "[MarsNova Standalone] Server ready and listening on http://" << (host == "0.0.0.0" ? "localhost" : host) << ":" << port << std::endl;
 
+    // Same setting nginx and Drogon use ("app": {"client_max_body_size": "25M"}); default 10 MB.
+    const size_t maxBodyBytes = parseSizeLimit(config_["app"]["client_max_body_size"].asString(), 10u * 1024u * 1024u);
+
     while (true) {
         sockaddr_in clientAddr{};
 #if defined(_WIN32)
         int clientLen = sizeof(clientAddr);
         SOCKET clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientLen);
         if (clientFd == INVALID_SOCKET) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
 #else
         socklen_t clientLen = sizeof(clientAddr);
         int clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientLen);
         if (clientFd < 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
 #endif
@@ -750,7 +585,23 @@ void HttpAppFramework::run() {
         const char *ipStr = inet_ntoa(clientAddr.sin_addr);
         std::string clientIp = ipStr ? ipStr : "127.0.0.1";
 
-        std::thread([this, clientFd, clientIp]() {
+        // One thread per connection, so cap how many can exist at once.
+        if (s_activeConnections.load() >= kMaxConnections) {
+            sendSimpleResponse(clientFd, 503, "Service Unavailable",
+                               R"({"error":"Server is busy, please try again shortly","code":"SERVER_BUSY"})");
+            closeSocketHandle(clientFd);
+            continue;
+        }
+        s_activeConnections.fetch_add(1);
+
+        std::thread([this, clientFd, clientIp, maxBodyBytes]() {
+            struct ConnectionGuard {
+                ~ConnectionGuard() { s_activeConnections.fetch_sub(1); }
+            } connectionGuard;
+
+            // A client that stops sending must not hold this thread forever.
+            setRecvTimeout(clientFd, kRecvTimeoutMs);
+
             std::string rawRequest;
             char buffer[4096];
             size_t headerEnd = std::string::npos;
@@ -759,10 +610,9 @@ void HttpAppFramework::run() {
             size_t delimLen = 4;
 
             while (true) {
-                int bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
+                int bytesRead = static_cast<int>(recv(clientFd, buffer, sizeof(buffer), 0));
                 if (bytesRead <= 0) break;
-                buffer[bytesRead] = '\0';
-                rawRequest.append(buffer, bytesRead);
+                rawRequest.append(buffer, static_cast<size_t>(bytesRead));
 
                 if (headerEnd == std::string::npos) {
                     headerEnd = rawRequest.find("\r\n\r\n");
@@ -771,30 +621,52 @@ void HttpAppFramework::run() {
                         headerEnd = rawRequest.find("\n\n");
                         delimLen = 2;
                     }
-                    if (headerEnd != std::string::npos) {
-                        std::string headersPart = rawRequest.substr(0, headerEnd);
-                        std::istringstream hss(headersPart);
-                        std::string line;
-                        while (std::getline(hss, line)) {
-                            if (!line.empty() && line.back() == '\r') line.pop_back();
-                            size_t colon = line.find(':');
-                            if (colon != std::string::npos) {
-                                std::string hName = line.substr(0, colon);
-                                std::string hVal = line.substr(colon + 1);
-                                while (!hVal.empty() && (hVal.front() == ' ' || hVal.front() == '\t')) hVal.erase(0, 1);
-                                while (!hVal.empty() && (hVal.back() == ' ' || hVal.back() == '\t')) hVal.pop_back();
-                                if (iequals(hName, "Content-Length")) {
-                                    try {
-                                        expectedContentLength = std::stoul(hVal);
-                                        hasContentLength = true;
-                                    } catch (...) {}
-                                }
+                    if (headerEnd == std::string::npos) {
+                        if (rawRequest.size() > kMaxHeaderBytes) {
+                            sendSimpleResponse(clientFd, 431, "Request Header Fields Too Large",
+                                               R"({"error":"Request headers are too large","code":"HEADERS_TOO_LARGE"})");
+                            gracefulClose(clientFd);
+                            return;
+                        }
+                        continue;
+                    }
+                    if (headerEnd > kMaxHeaderBytes) {
+                        sendSimpleResponse(clientFd, 431, "Request Header Fields Too Large",
+                                           R"({"error":"Request headers are too large","code":"HEADERS_TOO_LARGE"})");
+                        gracefulClose(clientFd);
+                        return;
+                    }
+
+                    std::string headersPart = rawRequest.substr(0, headerEnd);
+                    std::istringstream hss(headersPart);
+                    std::string line;
+                    while (std::getline(hss, line)) {
+                        if (!line.empty() && line.back() == '\r') line.pop_back();
+                        size_t colon = line.find(':');
+                        if (colon != std::string::npos) {
+                            std::string hName = line.substr(0, colon);
+                            std::string hVal = line.substr(colon + 1);
+                            while (!hVal.empty() && (hVal.front() == ' ' || hVal.front() == '\t')) hVal.erase(0, 1);
+                            while (!hVal.empty() && (hVal.back() == ' ' || hVal.back() == '\t')) hVal.pop_back();
+                            if (iequals(hName, "Content-Length")) {
+                                try {
+                                    expectedContentLength = std::stoul(hVal);
+                                    hasContentLength = true;
+                                } catch (...) {}
                             }
                         }
-                        size_t bodyBytes = rawRequest.size() - (headerEnd + delimLen);
-                        if (!hasContentLength || bodyBytes >= expectedContentLength) {
-                            break;
-                        }
+                    }
+
+                    if (hasContentLength && expectedContentLength > maxBodyBytes) {
+                        sendSimpleResponse(clientFd, 413, "Payload Too Large",
+                                           R"({"error":"Request body is too large","code":"PAYLOAD_TOO_LARGE"})");
+                        gracefulClose(clientFd);
+                        return;
+                    }
+
+                    size_t bodyBytes = rawRequest.size() - (headerEnd + delimLen);
+                    if (!hasContentLength || bodyBytes >= expectedContentLength) {
+                        break;
                     }
                 } else {
                     size_t bodyBytes = rawRequest.size() - (headerEnd + delimLen);
@@ -805,11 +677,16 @@ void HttpAppFramework::run() {
             }
 
             if (rawRequest.empty() || headerEnd == std::string::npos) {
-#if defined(_WIN32)
-                closesocket(clientFd);
-#else
-                close(clientFd);
-#endif
+                closeSocketHandle(clientFd);
+                return;
+            }
+
+            // The connection ended or timed out before the whole body arrived: do not run the
+            // handler on a truncated body.
+            if (hasContentLength && rawRequest.size() - (headerEnd + delimLen) < expectedContentLength) {
+                sendSimpleResponse(clientFd, 400, "Bad Request",
+                                   R"({"error":"Request body was incomplete","code":"BAD_REQUEST"})");
+                closeSocketHandle(clientFd);
                 return;
             }
 
@@ -831,6 +708,13 @@ void HttpAppFramework::run() {
                 std::string methodStr, uriStr, httpVersion;
                 rls >> methodStr >> uriStr >> httpVersion;
 
+                if (methodStr.empty() || uriStr.empty()) {
+                    sendSimpleResponse(clientFd, 400, "Bad Request",
+                                       R"({"error":"Malformed request line","code":"BAD_REQUEST"})");
+                    gracefulClose(clientFd);
+                    return;
+                }
+
                 if (methodStr == "GET") req->method_ = drogon::Get;
                 else if (methodStr == "POST") req->method_ = drogon::Post;
                 else if (methodStr == "PUT") req->method_ = drogon::Put;
@@ -838,6 +722,13 @@ void HttpAppFramework::run() {
                 else if (methodStr == "OPTIONS") req->method_ = drogon::Options;
                 else if (methodStr == "PATCH") req->method_ = drogon::Patch;
                 else if (methodStr == "HEAD") req->method_ = drogon::Head;
+                else {
+                    // Unknown methods used to fall through as GET (TRACE /api/v1/services returned data).
+                    sendSimpleResponse(clientFd, 501, "Not Implemented",
+                                       R"({"error":"HTTP method not implemented","code":"METHOD_NOT_IMPLEMENTED"})");
+                    gracefulClose(clientFd);
+                    return;
+                }
 
                 req->path_ = uriStr;
             }
@@ -856,33 +747,52 @@ void HttpAppFramework::run() {
                 }
             }
 
-            this->handleRequest(req, [clientFd](const HttpResponsePtr &resp) {
-                std::ostringstream ss;
-                ss << "HTTP/1.1 " << static_cast<int>(resp->statusCode()) << " " << resp->statusMessage_ << "\r\n";
-                bool hasContentLen = false;
-                bool hasConn = false;
-                for (const auto &h : resp->headers_) {
-                    ss << h.first << ": " << h.second << "\r\n";
-                    if (iequals(h.first, "Content-Length")) hasContentLen = true;
-                    if (iequals(h.first, "Connection")) hasConn = true;
-                }
-                if (!hasContentLen) {
-                    ss << "Content-Length: " << resp->body_.size() << "\r\n";
-                }
-                if (!hasConn) {
-                    ss << "Connection: close\r\n";
-                }
-                ss << "\r\n";
-                ss << resp->body_;
+            const bool isHead = (req->method_ == drogon::Head);
+            // Tracks whether an answer went out, so a late exception never writes to a socket that
+            // was already closed (and may since have been reused by another connection).
+            auto responded = std::make_shared<std::atomic<bool>>(false);
 
-                std::string out = ss.str();
-                send(clientFd, out.c_str(), static_cast<int>(out.size()), 0);
-#if defined(_WIN32)
-                closesocket(clientFd);
-#else
-                close(clientFd);
-#endif
-            });
+            try {
+                this->handleRequest(req, [clientFd, isHead, responded](const HttpResponsePtr &resp) {
+                    if (responded->exchange(true)) return;
+                    std::ostringstream ss;
+                    ss << "HTTP/1.1 " << static_cast<int>(resp->statusCode()) << " " << resp->statusMessage_ << "\r\n";
+                    bool hasContentLen = false;
+                    bool hasConn = false;
+                    for (const auto &h : resp->headers_) {
+                        ss << h.first << ": " << h.second << "\r\n";
+                        if (iequals(h.first, "Content-Length")) hasContentLen = true;
+                        if (iequals(h.first, "Connection")) hasConn = true;
+                    }
+                    if (!hasContentLen) {
+                        ss << "Content-Length: " << resp->body_.size() << "\r\n";
+                    }
+                    if (!hasConn) {
+                        ss << "Connection: close\r\n";
+                    }
+                    ss << "\r\n";
+                    if (!isHead) {
+                        ss << resp->body_;  // a HEAD response carries the headers only
+                    }
+                    sendAll(clientFd, ss.str());
+                    closeSocketHandle(clientFd);
+                });
+            } catch (const std::exception &e) {
+                // Never let an exception from a handler terminate the whole server process.
+                std::cerr << "[MarsNova Standalone] unhandled exception while serving a request: " << e.what() << std::endl;
+                if (!responded->exchange(true)) {
+                    sendSimpleResponse(clientFd, 500, "Internal Server Error",
+                                       R"({"error":"Internal server error","code":"INTERNAL_ERROR"})");
+                    closeSocketHandle(clientFd);
+                }
+            } catch (...) {
+                std::cerr << "[MarsNova Standalone] unknown exception while serving a request" << std::endl;
+                if (!responded->exchange(true)) {
+                    sendSimpleResponse(clientFd, 500, "Internal Server Error",
+                                       R"({"error":"Internal server error","code":"INTERNAL_ERROR"})");
+                    closeSocketHandle(clientFd);
+                }
+            }
         }).detach();
     }
 }

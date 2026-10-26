@@ -9,10 +9,10 @@ This checklist serves as the authoritative, mandatory sign-off procedure before 
 | Check Item | Requirement | Verification Command | Status / Sign-Off |
 | :--- | :--- | :--- | :--- |
 | **Git Working Tree** | Clean working directory on release branch (`main` or `release/*`), tagged with semantic version | `git status && git log -1 --oneline` | [ ] |
-| **Frontend Unit & Integration Tests** | 100% passing across all 182+ test suites (UI, routing, hooks, animations, recovery workflows) | `npm test` | [ ] |
+| **Frontend Unit & Integration Tests** | 100% passing across all 189+ test suites (UI, routing, hooks, animations, recovery workflows) | `npm test` | [ ] |
 | **TypeScript Type Safety** | Zero compilation errors, strict null checks enabled | `npm run typecheck` | [ ] |
 | **Production Frontend Build** | Clean Vite production bundle generation, asset hashes, chunk size optimization | `npm run build` | [ ] |
-| **C++ Drogon Backend Smoke Suite** | All 15 functional, security, and integration suites passing with 0 errors | `./backend/smoke_test.exe` (or Linux binary) | [ ] |
+| **C++ Drogon Backend Smoke Suite** | All 17 functional, security, and integration suites passing with 0 errors (rebuild `smoke_test.exe` and `marsnova_backend.exe` from the current source first; `npm test` also starts the server binary for `tests/http-hardening.test.js`) | `./backend/smoke_test.exe` (or Linux binary) | [ ] |
 | **Concurrency Load Baseline** | Verified zero error rate at 10, 25, 50, and 100 concurrent clients on core endpoints | `./backend/benchmark.exe` | [ ] |
 
 ---

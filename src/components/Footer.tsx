@@ -90,10 +90,9 @@ export const Footer: React.FC = () => {
         {/* Footer Bottom Bar */}
         <div className="footer-bottom">
           <div>© {new Date().getFullYear()} MarsNova Studio. All rights reserved.</div>
-          <div style={{ display: 'flex', gap: '20px' }}>
+          <div className="footer-links-row">
             <Link to="/about">About Studio</Link>
             <Link to="/contact">Contact</Link>
-            <Link to="/contact?tab=bug">Report a Bug</Link>
             <Link to="/admin">Operations Admin</Link>
           </div>
         </div>

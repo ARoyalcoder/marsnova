@@ -85,7 +85,14 @@ test('Frontend API client and Contact forms connect to POST /api/v1/leads', () =
 
   // ContactPage provides consent mechanism
   assert.ok(contactSrc.includes('contact-consent'), 'ContactPage must render consent checkbox');
-  assert.ok(contactSrc.includes('consent: true'), 'ContactPage must track consent state');
+  assert.ok(contactSrc.includes('checked={formData.consent}'), 'ContactPage must track consent state in a controlled checkbox');
+
+  // Consent must be an explicit action: the form starts unticked and nothing ever pre-ticks it.
+  // (This used to assert the literal text "consent: true", which pinned a pre-ticked box.)
+  const initialState = contactSrc.match(/const \[formData, setFormData\] = useState\(\{[^}]*\}\)/);
+  assert.ok(initialState, 'ContactPage must declare its form state');
+  assert.match(initialState[0], /consent:\s*false/, 'The consent checkbox must start unticked');
+  assert.ok(!/consent:\s*true/.test(contactSrc), 'ContactPage must never default consent to true');
 });
 
 test('C++ Drogon Smoke Test executable executes all 8 tests with 0 errors', () => {

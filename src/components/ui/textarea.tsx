@@ -28,16 +28,10 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             : undefined
         }
         className={cn(
-          'flex min-h-[80px] w-full rounded-md border border-[var(--border-color,#101B2B)] bg-[var(--surface-card,#080F1D)] px-3 py-2 text-sm text-[var(--text-main,#F5F7FF)] shadow-sm placeholder:text-[var(--text-dim,#64748B)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)] disabled:cursor-not-allowed disabled:opacity-50',
-          hasError && 'border-red-500 focus-visible:ring-red-500',
+          'ui-textarea flex min-h-[80px] w-full rounded-md border border-[var(--border-color,#101B2B)] bg-[var(--surface-card,#080F1D)] px-3 py-2 text-sm text-[var(--text-main,#F5F7FF)] shadow-sm placeholder:text-[var(--text-dim,#64748B)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)] disabled:cursor-not-allowed disabled:opacity-50',
+          hasError && 'ui-textarea-error border-red-500 focus-visible:ring-red-500',
           className
         )}
-        style={{
-          backgroundColor: 'var(--surface-card, #080F1D)',
-          borderColor: hasError ? '#ef4444' : 'var(--border-color, #101B2B)',
-          color: 'var(--text-main, #F5F7FF)',
-          ...props.style
-        }}
         {...props}
       />
     );

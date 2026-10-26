@@ -23,6 +23,7 @@ import { AnimatedSection } from '../components/animations/AnimatedSection';
 import { statsData, workPortfolioData, coursesData } from '../data';
 import { Button, Badge, Container } from '../components/ui';
 import { SharedCTA } from '../components/SharedCTA';
+import { ServiceCard } from '../components/ServiceCard';
 import { usePageSEO } from '../utils/seo';
 
 interface HomePageProps {
@@ -151,88 +152,11 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenVideo, onOpenRecoveryT
             </p>
           </div>
 
-          <div className="cards-grid-4">
-            {/* Card 1: Video Creation & Editing */}
-            <motion.div
-              className="service-card"
-              whileHover={shouldReduceMotion ? undefined : { y: -4 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div>
-                <div className="service-icon-box" style={{ background: '#1E293B', color: '#60A5FA' }} aria-hidden="true">
-                  <Video size={22} />
-                </div>
-                <h3 className="service-card-title">Video Creation & Editing</h3>
-                <p className="service-card-desc">
-                  From topic to complete video, editing, thumbnails and more.
-                </p>
-              </div>
-              <Link to="/services" className="card-link" aria-label="Learn more about Video Creation and Editing">
-                Learn More <ChevronRight size={14} />
-              </Link>
-            </motion.div>
-
-            {/* Card 2: Social Media Services */}
-            <motion.div
-              className="service-card"
-              whileHover={shouldReduceMotion ? undefined : { y: -4 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div>
-                <div className="service-icon-box" style={{ background: '#3B0764', color: '#C084FC' }} aria-hidden="true">
-                  <TrendingUp size={22} />
-                </div>
-                <h3 className="service-card-title">Social Media Services</h3>
-                <p className="service-card-desc">
-                  Consultation, content planning, account audit and promotion.
-                </p>
-              </div>
-              <Link to="/services" className="card-link" aria-label="Learn more about Social Media Services">
-                Learn More <ChevronRight size={14} />
-              </Link>
-            </motion.div>
-
-            {/* Card 3: Business Promotion */}
-            <motion.div
-              className="service-card"
-              whileHover={shouldReduceMotion ? undefined : { y: -4 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div>
-                <div className="service-icon-box" style={{ background: '#450A0A', color: '#F87171' }} aria-hidden="true">
-                  <Store size={22} />
-                </div>
-                <h3 className="service-card-title">Business Promotion</h3>
-                <p className="service-card-desc">
-                  On-location shoot, promotional videos and brand promotion.
-                </p>
-              </div>
-              <Link to="/services" className="card-link" aria-label="Learn more about Business Promotion">
-                Learn More <ChevronRight size={14} />
-              </Link>
-            </motion.div>
-
-            {/* Card 4: Tech Services */}
-            <motion.div
-              className="service-card"
-              whileHover={shouldReduceMotion ? undefined : { y: -4 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div>
-                <div className="service-icon-box" style={{ background: '#082F49', color: '#38BDF8' }} aria-hidden="true">
-                  <Laptop size={22} />
-                </div>
-                <h3 className="service-card-title">Tech Services</h3>
-                <p className="service-card-desc">
-                  Pen drive data recovery, technical support and more.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <Link to="/services" className="card-link" aria-label="Learn more about Tech Services">
-                  Learn More <ChevronRight size={14} />
-                </Link>
-              </div>
-            </motion.div>
+          <div className="service-cards-grid">
+            <ServiceCard title="Video Creation & Editing" description="From topic to complete video, editing, thumbnails and more." icon="Video" badge="Popular" detailsTo="/services/topic-to-video" enquireTo="/contact?service=Video%20Creation%20%26%20Editing" />
+            <ServiceCard title="Social Media Services" description="Consultation, content planning, account audit and promotion." icon="TrendingUp" badge="Social Media" detailsTo="/services/social-media-consultation" enquireTo="/contact?service=Social%20Media%20Services" />
+            <ServiceCard title="Business Promotion" description="On-location shoot, promotional videos and brand promotion." icon="Store" badge="Promotion" detailsTo="/services/business-promotion" enquireTo="/contact?service=Business%20Promotion" />
+            <ServiceCard title="Tech Services" description="Pen drive data recovery, technical support and more." icon="Laptop" badge="Tech" detailsTo="/services/online-tech-support" enquireTo="/contact?service=Tech%20Services" />
           </div>
         </Container>
       </AnimatedSection>
@@ -412,7 +336,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onOpenVideo, onOpenRecoveryT
                   <p className="service-card-desc">{course.description}</p>
                 </div>
 
-                <Link to={`/lab/courses/${course.id}`} style={{ marginTop: '16px' }}>
+                <Link to={`/lab/courses/${course.slug || course.id}`} style={{ marginTop: '16px' }}>
                   <Button variant="secondary" size="sm" fullWidth rightIcon={<ArrowRight size={14} />}>
                     Explore Course
                   </Button>

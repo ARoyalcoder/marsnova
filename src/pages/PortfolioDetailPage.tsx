@@ -38,6 +38,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
   const [work, setWork] = useState<WorkItem | null>(() => {
     return workPortfolioData.find((w) => w.id === slug) || null;
   });
+  const [allWork, setAllWork] = useState<WorkItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState<boolean>(false);
@@ -62,6 +63,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
       try {
         const res = await apiClient.getPortfolio(undefined, { signal: controller.signal });
         if (isMounted) {
+          setAllWork(res.data);
           const match = res.data.find((w) => w.slug === slug || w.id === slug);
           if (match) {
             setWork(match);
@@ -149,6 +151,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
       <div style={{ padding: '80px 0' }}>
         <Container size="narrow">
           <EmptyState
+            headingLevel={1}
             title="Case Study Not Found"
             description={`We could not find a case study matching "/portfolio/${slug}". Browse our complete creative work catalog.`}
             action={{
@@ -161,9 +164,10 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
     );
   }
 
-  // Related projects
-  const relatedProjects = workPortfolioData
-    .filter((item) => item.id !== work.id)
+  // Related projects come from the same API list the page resolved the slug from,
+  // so every link points at a slug the backend actually serves.
+  const relatedProjects = allWork
+    .filter((item) => item.id !== work.id && !(item.slug && item.slug === work.slug))
     .slice(0, 3);
 
   return (
@@ -186,7 +190,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
             <Badge variant="purple">{work.tag}</Badge>
           </div>
 
-          <h1 style={{ fontSize: '38px', fontWeight: 800, color: '#fff', lineHeight: 1.15 }}>
+          <h1 style={{ fontSize: 'clamp(26px, 5vw, 38px)', fontWeight: 800, color: '#fff', lineHeight: 1.15 }}>
             {work.title}
           </h1>
 
@@ -205,14 +209,11 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
 
         {/* Featured Media Banner with Play Button */}
         <div
+          className="responsive-media-banner"
           style={{
-            position: 'relative',
-            borderRadius: 'var(--radius-xl)',
-            overflow: 'hidden',
+            marginBottom: '48px',
             border: '1px solid var(--border-highlight)',
             background: '#000',
-            height: '420px',
-            marginBottom: '48px',
             cursor: 'pointer'
           }}
           role="button"
@@ -274,11 +275,11 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
         )}
 
         {/* 2-Column Content Layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '40px', marginBottom: '80px' }}>
+        <div className="responsive-detail-grid" style={{ marginBottom: '80px' }}>
           {/* Left Column: Challenge, Approach & Outcome */}
           <div>
             {work.challenge && (
-              <Card style={{ padding: '36px', marginBottom: '32px' }}>
+              <Card className="responsive-card-padding" style={{ marginBottom: '32px' }}>
                 <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 700, marginBottom: '14px' }}>
                   The Challenge
                 </h2>
@@ -289,7 +290,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
             )}
 
             {work.approach && (
-              <Card style={{ padding: '36px', marginBottom: '32px' }}>
+              <Card className="responsive-card-padding" style={{ marginBottom: '32px' }}>
                 <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 700, marginBottom: '14px' }}>
                   Our Approach & Production Strategy
                 </h2>
@@ -300,7 +301,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
             )}
 
             {work.outcome && (
-              <Card style={{ padding: '36px' }}>
+              <Card className="responsive-card-padding">
                 <h2 style={{ color: '#fff', fontSize: '20px', fontWeight: 700, marginBottom: '14px' }}>
                   The Outcome & Results
                 </h2>
@@ -315,7 +316,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Deliverables Card */}
             {work.deliverables && work.deliverables.length > 0 && (
-              <Card style={{ padding: '32px' }}>
+              <Card className="responsive-card-padding">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
                   <Layers size={20} color="var(--cyan-accent)" />
                   <h3 style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>
@@ -366,8 +367,8 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
             {/* Quick Action Card */}
             <Card
               variant="glow"
+              className="responsive-card-padding"
               style={{
-                padding: '32px',
                 background: 'linear-gradient(135deg, rgba(8, 15, 29, 0.95) 0%, rgba(16, 27, 43, 0.8) 100%)'
               }}
             >
@@ -396,7 +397,7 @@ export const PortfolioDetailPage: React.FC<PortfolioDetailPageProps> = ({ onOpen
               {relatedProjects.map((rel) => (
                 <Link
                   key={rel.id}
-                  to={`/portfolio/${rel.id}`}
+                  to={`/portfolio/${rel.slug || rel.id}`}
                   className="work-card"
                   style={{ display: 'block' }}
                 >

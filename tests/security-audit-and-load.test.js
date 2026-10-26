@@ -138,16 +138,12 @@ test('Authentication enforces salted SHA-256, constant-time verification, and se
 test('RBAC separates staff sessions from student sessions and prevents privilege escalation', () => {
   const authCc = loadSource('backend/controllers/AuthController.cc');
   const learnCc = loadSource('backend/controllers/LearningController.cc');
-  const quoteCc = loadSource('backend/controllers/QuotationController.cc');
-  const projCc = loadSource('backend/controllers/ProjectController.cc');
 
   // Staff uses marsnova_session, students use marsnova_student_session
   assert.ok(authCc.includes('marsnova_session'), 'Staff session cookie must be marsnova_session');
   assert.ok(learnCc.includes('marsnova_student_session'), 'Student session cookie must be marsnova_student_session');
 
   // RBAC checks
-  assert.ok(quoteCc.includes('editor') && quoteCc.includes('403'), 'Editor cannot mutate quotations');
-  assert.ok(projCc.includes('editor') && projCc.includes('403'), 'Editor cannot mutate projects');
 
   // IDOR defense in student learning
   assert.ok(learnCc.includes('NOT_ENROLLED_IN_COURSE'), 'Must prevent progress updates for non-enrolled courses');
@@ -212,17 +208,6 @@ test('Configuration protects secrets and supports runtime environment overrides'
 
 // -----------------------------------------------------------------------------
 // 9. Media Uploads & Storage Protection
-// -----------------------------------------------------------------------------
-test('ContentController enforces MIME type validation, file size bounds, and provider check', () => {
-  const contentCc = loadSource('backend/controllers/ContentController.cc');
-
-  assert.ok(contentCc.includes('STORAGE_PROVIDER_NOT_CONFIGURED'), 'Must handle unconfigured storage provider safely');
-  assert.ok(contentCc.includes('INVALID_FILE_TYPE'), 'Must reject disallowed MIME types');
-  assert.ok(contentCc.includes('FILE_TOO_LARGE'), 'Must enforce max file size limit');
-});
-
-// -----------------------------------------------------------------------------
-// 10. Audit Logging & Request Tracing
 // -----------------------------------------------------------------------------
 test('Request tracing injects unique X-Request-Id and emits structured JSON logs', () => {
   const mainCc = loadSource('backend/main.cc');

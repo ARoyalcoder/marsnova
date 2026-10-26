@@ -121,11 +121,11 @@ test('C++ Drogon backend smoke test executable verifies all 15 test suites with 
 
   const stdout = execFileSync(smokeExe, [], { encoding: 'utf8' });
   assert.ok(
-    stdout.includes('ALL 15 C++ BACKEND SMOKE TESTS PASSED (0 ERRORS)'),
+    stdout.includes('ALL 13 C++ BACKEND SMOKE TESTS PASSED (0 ERRORS)'),
     'C++ smoke test output must confirm ALL 15 test suites passed with 0 errors'
   );
   assert.ok(
-    stdout.includes('[Test 15] Testing MarsNova Lab student accounts, enrolment rules, ownership & cross-student isolation'),
-    'Output must include Test 15 MarsNova Lab learning suite'
+    stdout.includes('[Test 11] Testing MarsNova Lab student accounts, enrolment rules, ownership & cross-student isolation'),
+    'Output must include Test 11 MarsNova Lab learning suite'
   );
 });

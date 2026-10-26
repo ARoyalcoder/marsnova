@@ -17,8 +17,8 @@ export const InputGroup = React.forwardRef<HTMLDivElement, InputGroupProps>(
           className
         )}
         style={{
-          backgroundColor: 'var(--surface-card, #080F1D)',
-          borderColor: 'var(--border-color, #101B2B)',
+          backgroundColor: 'var(--bg-card, #080F1D)',
+          borderColor: 'var(--border-highlight, #1E2D4A)',
           ...props.style
         }}
         {...props}

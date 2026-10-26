@@ -2,6 +2,7 @@
 #include "AuthController.h"
 #include "../services/WhatsAppNotificationService.h"
 #include "../utils/Security.h"
+#include "../utils/Validation.h"
 #include <drogon/drogon.h>
 #include <regex>
 #include <chrono>
@@ -76,8 +77,7 @@ static std::string toLower(const std::string &str) {
 }
 
 static bool isValidEmail(const std::string &email) {
-    const std::regex pattern(R"((\w+)(\.{1}\w+)*@(\w+)(\.{1}\w+)+)");
-    return std::regex_match(email, pattern);
+    return Validation::isValidEmail(email);
 }
 
 static bool isAllowedSource(const std::string &source) {
@@ -310,13 +310,9 @@ void LeadController::createLead(const drogon::HttpRequestPtr &req,
     if (reqId.empty()) reqId = req->getHeader("X-Request-Id");
 
     // 1. IP-Based Sliding Window Rate Limiting (30 requests / 60 seconds)
-    std::string clientIp = req->getHeader("X-Forwarded-For");
-    if (clientIp.empty()) {
-        clientIp = req->peerAddr().toIp();
-    }
-    if (clientIp.empty() || clientIp == "0.0.0.0") {
-        clientIp = "127.0.0.1";
-    }
+    // Forwarding headers are only trusted from our own reverse proxy; a raw X-Forwarded-For let any
+    // client dodge this limit by sending a different value on every request.
+    const std::string clientIp = Security::resolveClientIp(req->peerAddr().toIp(), req->getHeader("X-Real-IP"), req->getHeader("X-Forwarded-For"));
 
     auto now = std::chrono::steady_clock::now();
     {
@@ -595,7 +591,8 @@ void LeadController::createLead(const drogon::HttpRequestPtr &req,
                 [callback, reqId](const drogon::orm::DrogonDbException &actErr) {
                     // Initial activity save failed: NEVER confirm a failed save!
                     Json::Value err;
-                    err["error"] = "Database error saving initial activity: " + std::string(actErr.base().what());
+                    std::cerr << "[MarsNova] Database error saving initial activity: " << actErr.base().what() << std::endl;
+                    err["error"] = "Database error saving initial activity. Please try again shortly.";
                     err["code"] = "DATABASE_ERROR";
                     if (!reqId.empty()) err["request_id"] = reqId;
                     auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
@@ -608,7 +605,8 @@ void LeadController::createLead(const drogon::HttpRequestPtr &req,
         [callback, reqId](const drogon::orm::DrogonDbException &e) {
             // Lead save failed: NEVER confirm a failed save!
             Json::Value err;
-            err["error"] = "Database error saving lead: " + std::string(e.base().what());
+            std::cerr << "[MarsNova] Database error saving lead: " << e.base().what() << std::endl;
+            err["error"] = "Database error saving lead. Please try again shortly.";
             err["code"] = "DATABASE_ERROR";
             if (!reqId.empty()) err["request_id"] = reqId;
             auto resp = drogon::HttpResponse::newHttpJsonResponse(err);

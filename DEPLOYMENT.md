@@ -102,6 +102,30 @@ Comprehensive deployment, HTTPS/TLS termination, automated database migrations, 
    BACKUP_RETENTION_DAYS=14
    ```
 
+### First admin account
+
+MarsNova ships **no default staff logins**. The backend creates the first `super_admin` at
+startup from two variables in `.env`:
+
+```ini
+MARSNOVA_BOOTSTRAP_ADMIN_EMAIL=you@marsnova.in
+MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD=<STRONG_PASSWORD_12_PLUS_CHARS>
+# optional display name (default: Studio Administrator)
+MARSNOVA_BOOTSTRAP_ADMIN_NAME=Studio Administrator
+```
+
+- It is one-time: the account is created only when no **active** `super_admin` exists, and
+  an existing account is never overwritten or reset. A skipped bootstrap says so in the backend log.
+- The password needs at least 12 characters. The email may use letters, digits, underscores and dots.
+- After the first successful start, **remove `MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD` from `.env`**
+  and run `docker compose up -d backend`. Further staff are added by a `super_admin`.
+- Do not reuse an email suspended by migration 011 (`admin@`, `manager@`, `editor@marsnova.in`):
+  a duplicate email is skipped.
+- Check the backend log line `Staff user store:`. It reads `PostgreSQL` when the backend is built
+  against Drogon. If it reads `in-process memory`, the backend was built in standalone mode, which has
+  no database access: accounts are lost on restart, and the bootstrap admin is recreated from
+  `.env` on every start, so keep the variables set in that mode.
+
 ---
 
 ## 4. Initial Deployment & Execution

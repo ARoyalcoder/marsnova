@@ -22,8 +22,6 @@ test('AuthController registers login, logout, session inspection, and RBAC route
   assert.ok(header.includes('/api/v1/auth/login'), 'Header must declare login route');
   assert.ok(header.includes('/api/v1/auth/logout'), 'Header must declare logout route');
   assert.ok(header.includes('/api/v1/auth/session'), 'Header must declare session inspection route');
-  assert.ok(header.includes('/api/v1/admin/overview'), 'Header must declare admin overview route');
-  assert.ok(header.includes('/api/v1/admin/quotes'), 'Header must declare admin quotes route');
   assert.ok(header.includes('/api/v1/admin/users'), 'Header must declare admin users route');
 
   // Verify standalone router bindings
@@ -31,8 +29,6 @@ test('AuthController registers login, logout, session inspection, and RBAC route
   assert.ok(standalone.includes('/api/v1/auth/login'), 'Standalone router must dispatch /api/v1/auth/login');
   assert.ok(standalone.includes('/api/v1/auth/logout'), 'Standalone router must dispatch /api/v1/auth/logout');
   assert.ok(standalone.includes('/api/v1/auth/session'), 'Standalone router must dispatch /api/v1/auth/session');
-  assert.ok(standalone.includes('/api/v1/admin/overview'), 'Standalone router must dispatch /api/v1/admin/overview');
-  assert.ok(standalone.includes('/api/v1/admin/quotes'), 'Standalone router must dispatch /api/v1/admin/quotes');
   assert.ok(standalone.includes('/api/v1/admin/users'), 'Standalone router must dispatch /api/v1/admin/users');
 
   // Verify build inclusion
@@ -122,14 +118,12 @@ test('Frontend client defines typed auth functions and types', () => {
   assert.ok(apiSource.includes('export async function loginStaff'), 'Must export loginStaff API function');
   assert.ok(apiSource.includes('export async function logoutStaff'), 'Must export logoutStaff API function');
   assert.ok(apiSource.includes('export async function inspectSession'), 'Must export inspectSession API function');
-  assert.ok(apiSource.includes('export async function getAdminOverview'), 'Must export getAdminOverview API function');
 
   // UI Integration
   assert.ok(adminPageSource.includes('loginStaff'), 'AdminPage must invoke loginStaff');
   assert.ok(adminPageSource.includes('logoutStaff'), 'AdminPage must invoke logoutStaff');
   assert.ok(adminPageSource.includes('inspectSession'), 'AdminPage must invoke inspectSession');
   assert.ok(adminPageSource.includes('currentUser'), 'AdminPage must track authenticated staff state');
-  assert.ok(adminPageSource.includes('isSuperAdmin'), 'AdminPage must conditionally reveal Super Admin modules');
 });
 
 test('PostgreSQL migration file creates sessions table with constraints and indexes', () => {

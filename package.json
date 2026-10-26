@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File .\\start-marsnova.ps1",
     "dev": "vite --host 0.0.0.0 --configLoader native",
     "backend": ".\\backend\\marsnova_backend.exe",
     "build": "vite build",

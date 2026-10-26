@@ -1,5 +1,6 @@
 #include "LearningController.h"
 #include "../utils/Security.h"
+#include "../utils/Validation.h"
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -90,8 +91,7 @@ static std::string getIsoTimestamp() {
 }
 
 static bool isValidEmail(const std::string &email) {
-    const std::regex pattern(R"((\w+)(\.{1}\w+)*@(\w+)(\.{1}\w+)+)");
-    return std::regex_match(email, pattern);
+    return Validation::isValidEmail(email);
 }
 
 static void ensureLabCatalogSeeded() {

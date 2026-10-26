@@ -79,7 +79,9 @@ test('LabPage implements categories, filters, empty state, and media resilience'
   assert.ok(labContent.includes('<EmptyState'), 'Must render EmptyState when category has no matches');
 
   // Link to details and prefilled enquiry
-  assert.ok(labContent.includes('/lab/courses/${course.id}'), 'Must link cards to /lab/courses/:slug');
+  // The API's ids ("c-1") are not routable; the course page looks courses up by slug.
+  assert.ok(labContent.includes('/lab/courses/${course.slug || course.id}'), 'Must link cards to /lab/courses/:slug');
+  assert.ok(!labContent.includes('/lab/courses/${course.id}'), 'Must not link cards by the API id');
   assert.ok(labContent.includes('/contact?service='), 'Must link enquiry to /contact?service=...');
 
   // Media resilience

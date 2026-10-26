@@ -1,4 +1,8 @@
 #pragma once
+// Marks the standalone compatibility build. Real Drogon does not define this, so
+// code can tell whether a PostgreSQL-backed DbClient is actually available.
+#define MARSNOVA_COMPAT_DROGON 1
+
 #include <string>
 #include <vector>
 #include <map>
@@ -239,6 +243,15 @@ public:
     bool simulateFailure_{false};
     void setSimulateFailure(bool fail) { simulateFailure_ = fail; }
 
+    // Test hook (not part of real Drogon): lets a test answer SQL itself. Return an empty
+    // `error` to deliver `out` to the success callback, or set `error` to fail the query.
+    using SqlHandler = std::function<void(const std::string &sql,
+                                          const std::vector<std::string> &args,
+                                          Result &out,
+                                          std::string &error)>;
+    SqlHandler sqlHandler_;
+    void setSqlHandler(SqlHandler handler) { sqlHandler_ = std::move(handler); }
+
     virtual ~DbClient() = default;
 
     template<typename... Args>
@@ -251,6 +264,20 @@ public:
         if (simulateFailure_) {
             if (errorCallback) {
                 errorCallback(DrogonDbException("Simulated PostgreSQL connection failure: server closed the connection unexpectedly"));
+            }
+            return;
+        }
+
+        if (sqlHandler_) {
+            std::vector<std::string> boundArgs;
+            (boundArgs.push_back(stringifyArg(args)), ...);
+            Result handled;
+            std::string error;
+            sqlHandler_(sql, boundArgs, handled, error);
+            if (!error.empty()) {
+                if (errorCallback) errorCallback(DrogonDbException(error));
+            } else if (successCallback) {
+                successCallback(handled);
             }
             return;
         }
@@ -277,6 +304,14 @@ public:
         if (successCallback) {
             successCallback(r);
         }
+    }
+
+private:
+    template<typename T>
+    static std::string stringifyArg(const T &value) {
+        std::ostringstream ss;
+        ss << value;
+        return ss.str();
     }
 };
 

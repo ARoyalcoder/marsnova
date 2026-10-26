@@ -38,12 +38,24 @@ done
 echo "[Migration] Successfully connected to PostgreSQL."
 
 # 2. Ensure schema_migrations tracking table exists
+# The migration files record themselves with different column sets: 001, 002 and 004-008 insert
+# (version, description), 003 inserts (version, name, executed_by) and 009 inserts (version, name,
+# applied_at). This table is created BEFORE any of them run, so it must accept all three shapes;
+# with only (version, name NOT NULL, applied_at) the first INSERT in migration 001 failed with
+# 'column "description" does not exist', rolled that migration back and stopped the whole run.
 psql -v ON_ERROR_STOP=1 <<-EOSQL
     CREATE TABLE IF NOT EXISTS schema_migrations (
-        version VARCHAR(32) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
+        version VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255),
+        description TEXT,
+        executed_by VARCHAR(64),
         applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    -- bring a table created by an earlier version of this script up to the same shape
+    ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS description TEXT;
+    ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS executed_by VARCHAR(64);
+    ALTER TABLE schema_migrations ALTER COLUMN name DROP NOT NULL;
+    ALTER TABLE schema_migrations ALTER COLUMN version TYPE VARCHAR(64);
 EOSQL
 
 echo "[Migration] Tracking table 'schema_migrations' verified."
@@ -73,7 +85,8 @@ for mig_file in $(find "$MIGRATIONS_DIR" -maxdepth 1 -name "*.sql" | sort); do
         psql -v ON_ERROR_STOP=1 <<-EOSQL
             INSERT INTO schema_migrations (version, name, applied_at)
             VALUES ('$version', '$filename', CURRENT_TIMESTAMP)
-            ON CONFLICT (version) DO NOTHING;
+            ON CONFLICT (version) DO UPDATE
+                SET name = COALESCE(schema_migrations.name, EXCLUDED.name);
 EOSQL
         echo "  [SUCCESS] Migration $filename applied successfully."
         APPLIED_COUNT=$((APPLIED_COUNT + 1))

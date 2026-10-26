@@ -7,4 +7,6 @@ dist/
 *.exe
 .vite-temp/
 build/
+.claude/
+screenshots/
 

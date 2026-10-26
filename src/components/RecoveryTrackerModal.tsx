@@ -29,18 +29,23 @@ import {
 interface RecoveryTrackerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialCaseId?: string;
 }
 
-export const RecoveryTrackerModal: React.FC<RecoveryTrackerModalProps> = ({ isOpen, onClose }) => {
-  const [caseId, setCaseId] = useState('MN-REC-8291');
+export const RecoveryTrackerModal: React.FC<RecoveryTrackerModalProps> = ({
+  isOpen,
+  onClose,
+  initialCaseId
+}) => {
+  const [caseId, setCaseId] = useState(initialCaseId || 'MN-REC-8291');
   const [loading, setLoading] = useState(false);
   const [caseData, setCaseData] = useState<RecoveryCase | null>(null);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!caseId.trim()) {
+  const executeTracking = async (idToQuery: string) => {
+    const cleanId = idToQuery.trim().toUpperCase();
+    if (!cleanId) {
       toast.error('Please enter a valid Case ID');
       return;
     }
@@ -48,7 +53,7 @@ export const RecoveryTrackerModal: React.FC<RecoveryTrackerModalProps> = ({ isOp
     setLoading(true);
     setError('');
     try {
-      const data = await trackRecoveryCase(caseId);
+      const data = await trackRecoveryCase(cleanId);
       setCaseData(data);
       toast.success(`Case ${data.case_id} retrieved successfully`);
     } catch (err: any) {
@@ -58,6 +63,23 @@ export const RecoveryTrackerModal: React.FC<RecoveryTrackerModalProps> = ({ isOp
     } finally {
       setLoading(false);
     }
+  };
+
+  React.useEffect(() => {
+    if (isOpen) {
+      const targetId = initialCaseId || caseId || 'MN-REC-8291';
+      if (initialCaseId && initialCaseId !== caseId) {
+        setCaseId(initialCaseId);
+      }
+      if (!caseData || caseData.case_id !== targetId) {
+        executeTracking(targetId);
+      }
+    }
+  }, [isOpen, initialCaseId]);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    executeTracking(caseId);
   };
 
   return (
@@ -77,7 +99,7 @@ export const RecoveryTrackerModal: React.FC<RecoveryTrackerModalProps> = ({ isOp
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px', marginTop: '12px', marginBottom: '16px' }}>
+        <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px', marginTop: '12px', marginBottom: '8px' }}>
           <input
             type="text"
             className="form-input"
@@ -91,6 +113,32 @@ export const RecoveryTrackerModal: React.FC<RecoveryTrackerModalProps> = ({ isOp
             Track
           </Button>
         </form>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Sample records:</span>
+          {['MN-REC-8291', 'MN-REC-1042'].map((sampleId) => (
+            <button
+              key={sampleId}
+              type="button"
+              onClick={() => {
+                setCaseId(sampleId);
+                executeTracking(sampleId);
+              }}
+              style={{
+                background: 'rgba(168, 85, 247, 0.12)',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                color: 'var(--purple-glow)',
+                borderRadius: '6px',
+                padding: '2px 8px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              {sampleId}
+            </button>
+          ))}
+        </div>
 
         {error && (
           <ErrorState

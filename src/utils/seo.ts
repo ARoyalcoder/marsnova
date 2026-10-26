@@ -7,6 +7,8 @@ export interface PageSEOProps {
   ogType?: 'website' | 'article';
   ogImage?: string;
   jsonLd?: Record<string, unknown> | Array<Record<string, unknown>>;
+  /** Ask search engines not to index this view (used by the 404 page). */
+  noindex?: boolean;
 }
 
 const DEFAULT_TITLE = 'MarsNova — Your Ideas Our Creation';
@@ -43,7 +45,8 @@ export function usePageSEO({
   canonicalPath = '',
   ogType = 'website',
   ogImage = DEFAULT_OG_IMAGE,
-  jsonLd
+  jsonLd,
+  noindex = false
 }: PageSEOProps) {
   useEffect(() => {
     const fullTitle = title
@@ -59,6 +62,7 @@ export function usePageSEO({
     // Title & Description
     document.title = fullTitle;
     setMetaTag('meta[name="description"]', 'name', 'description', description);
+    setMetaTag('meta[name="robots"]', 'name', 'robots', noindex ? 'noindex, nofollow' : 'index, follow');
     setCanonical(fullUrl);
 
     // Open Graph
@@ -97,5 +101,5 @@ export function usePageSEO({
         el.remove();
       }
     };
-  }, [title, description, canonicalPath, ogType, ogImage, jsonLd]);
+  }, [title, description, canonicalPath, ogType, ogImage, jsonLd, noindex]);
 }

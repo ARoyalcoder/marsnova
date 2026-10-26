@@ -11,14 +11,10 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex h-10 items-center justify-center rounded-lg bg-[var(--surface-card,#080F1D)] p-1 text-[var(--text-dim,#64748B)] border border-[var(--border-color,#101B2B)]',
+      // `ui-tabs-list` carries the real styling (see "shadcn-style primitives" in index.css)
+      'ui-tabs-list inline-flex h-10 items-center justify-center rounded-lg bg-[var(--surface-card,#080F1D)] p-1 text-[var(--text-dim,#64748B)] border border-[var(--border-color,#101B2B)]',
       className
     )}
-    style={{
-      backgroundColor: 'var(--surface-card, #080F1D)',
-      borderColor: 'var(--border-color, #101B2B)',
-      ...props.style
-    }}
     {...props}
   />
 ));
@@ -31,7 +27,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      'inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)] disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
+      'ui-tabs-trigger inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)] disabled:pointer-events-none disabled:opacity-50 cursor-pointer',
       'data-[state=active]:bg-[var(--purple-primary,#7919F5)] data-[state=active]:text-white data-[state=active]:shadow-sm',
       'hover:text-[var(--text-main,#F5F7FF)]',
       className
@@ -48,7 +44,7 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      'mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)]',
+      'ui-tabs-content mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan-accent,#38BDF8)]',
       className
     )}
     {...props}
