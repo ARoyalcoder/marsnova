@@ -45,17 +45,38 @@ bool isLoopbackOrigin(const std::string &origin) {
 }
 
 // An Origin may receive credentialed CORS access only if it is listed in config.json
-// (custom_config.cors_allowed_origins, rendered from CORS_ORIGINS in Docker) or is loopback.
-// Echoing every Origin back with credentials enabled let any website call the API as the user.
+// (custom_config.cors_allowed_origins, rendered from CORS_ORIGINS in Docker), is loopback,
+// or matches the known MarsNova deployment domains.
 bool isAllowedOrigin(const std::string &origin) {
     if (origin.empty() || origin.size() > 256) return false;
     if (isLoopbackOrigin(origin)) return true;
+
+    // Built-in allowlist for official MarsNova frontend domains (production & Vercel)
+    if (origin == "https://marsnova.vercel.app" ||
+        origin == "https://marsnova.in" ||
+        origin == "https://www.marsnova.in") {
+        return true;
+    }
+    // Allow MarsNova Vercel previews (e.g. https://marsnova-*.vercel.app)
+    if (origin.rfind("https://marsnova", 0) == 0 && origin.find(".vercel.app") != std::string::npos) {
+        return true;
+    }
+
     const Json::Value &allowed = drogon::app().getCustomConfig()["cors_allowed_origins"];
     if (!allowed.isArray()) return false;
     for (size_t i = 0; i < allowed.size(); ++i) {
         std::string entry = allowed[static_cast<int>(i)].asString();
         while (!entry.empty() && entry.back() == '/') entry.pop_back();
-        if (!entry.empty() && entry == origin) return true;
+        if (!entry.empty()) {
+            if (entry == "*" || entry == origin) return true;
+            if (entry.rfind("*.", 0) == 0) {
+                std::string suffix = entry.substr(1);
+                if (origin.size() >= suffix.size() &&
+                    origin.compare(origin.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                    return true;
+                }
+            }
+        }
     }
     return false;
 }

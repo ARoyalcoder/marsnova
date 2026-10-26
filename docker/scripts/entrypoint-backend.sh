@@ -41,7 +41,7 @@ export DB_PASSWORD="${DB_PASSWORD:-}"
 export PORT="${PORT:-8080}"
 export APP_THREADS="${APP_THREADS:-4}"
 export CLIENT_MAX_BODY_SIZE="${CLIENT_MAX_BODY_SIZE:-25M}"
-export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost,http://localhost:80,https://marsnova.in}"
+export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost,http://localhost:80,https://marsnova.in,https://marsnova.vercel.app}"
 export WHATSAPP_NUMBER="${WHATSAPP_NUMBER:-917208591595}"
 
 # Format CORS origins as JSON string array
