@@ -58,6 +58,10 @@ test('RecoveryController implements intake, diagnostic protection, custody, and 
   assert.ok(source.includes('includeProtectedInternal = false'), 'caseToJson must support redacting protected internal fields');
   assert.ok(source.includes('Redacted for public customer tracking') || source.includes('includeProtectedInternal'), 'Public tracking must protect diagnostic notes');
 
+  // Strict approval gates
+  assert.ok(source.includes('APPROVAL_GATE_REQUIRED'), 'State machine must enforce APPROVAL_GATE_REQUIRED');
+  assert.ok(source.includes('DEVICE_NOT_RECEIVED'), 'State machine must enforce DEVICE_NOT_RECEIVED');
+  assert.ok(source.includes('physicalReceiptConfirmed'), 'State machine must check physicalReceiptConfirmed');
 
   // Guardrails: no website-driven USB recovery or user file uploads
   assert.ok(!source.includes('navigator.usb') && !source.includes('WebUSB'), 'Backend must not attempt website-driven USB recovery');
@@ -131,5 +135,5 @@ test('C++ Drogon backend smoke test executable verifies all 13 test suites with 
   const stdout = execFileSync(exePath, [], { encoding: 'utf8' });
 
   assert.ok(stdout.includes('ALL 13 C++ BACKEND SMOKE TESTS PASSED (0 ERRORS)'), 'Smoke test output must report all 13 tests passed');
-  assert.ok(stdout.includes('[Test 10] Testing pen-drive data recovery'), 'Smoke test must report Test 13 passed');
+  assert.ok(stdout.includes('Testing pen-drive data recovery'), 'Smoke test must report pen-drive data recovery test passed');
 });

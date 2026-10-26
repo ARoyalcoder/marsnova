@@ -485,3 +485,848 @@ void RecoveryController::trackCase(const drogon::HttpRequestPtr &req,
     auto resp = drogon::HttpResponse::newHttpJsonResponse(data);
     callback(resp);
 }
+
+// =============================================================================
+// PROTECTED ADMIN RECOVERY DASHBOARD
+// =============================================================================
+
+void RecoveryController::listCasesAdmin(const drogon::HttpRequestPtr &req,
+                                       std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    std::string statusFilter = req->getParameter("status");
+    std::string search = req->getParameter("search");
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    Json::Value list(Json::arrayValue);
+    std::unordered_map<std::string, bool> seen;
+
+    for (const auto &pair : s_recoveryCases) {
+        const auto &c = pair.second;
+        if (seen.find(c.caseReference) != seen.end()) continue;
+        seen[c.caseReference] = true;
+
+        if (!statusFilter.empty() && statusFilter != "all" && c.recoveryStatus != statusFilter) {
+            continue;
+        }
+
+        if (!search.empty()) {
+            std::string sLow = search;
+            std::transform(sLow.begin(), sLow.end(), sLow.begin(), ::tolower);
+
+            std::string refLow = c.caseReference;
+            std::transform(refLow.begin(), refLow.end(), refLow.begin(), ::tolower);
+
+            std::string nameLow = c.customerName;
+            std::transform(nameLow.begin(), nameLow.end(), nameLow.begin(), ::tolower);
+
+            std::string brandLow = c.deviceBrand;
+            std::transform(brandLow.begin(), brandLow.end(), brandLow.begin(), ::tolower);
+
+            if (refLow.find(sLow) == std::string::npos &&
+                nameLow.find(sLow) == std::string::npos &&
+                brandLow.find(sLow) == std::string::npos) {
+                continue;
+            }
+        }
+
+        list.append(caseToJson(c, true));
+    }
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["total"] = (int)list.size();
+    res["cases"] = list;
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::getCaseAdmin(const drogon::HttpRequestPtr &req,
+                                     std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                     const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    const auto &c = it->second;
+    Json::Value data = caseToJson(c, true);
+
+    Json::Value timeline(Json::arrayValue);
+    for (const auto &ev : s_recoveryEvents) {
+        if (ev.caseReference == c.caseReference) {
+            timeline.append(eventToJson(ev, true));
+        }
+    }
+    data["timeline"] = timeline;
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = data;
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::confirmPhysicalReceipt(const drogon::HttpRequestPtr &req,
+                                               std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                               const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    auto jsonPtr = req->jsonObject();
+    std::string notes = jsonPtr ? jsonPtr->get("notes", "Physical intake confirmed in lab anti-static station").asString() : "";
+    std::string custody = jsonPtr ? jsonPtr->get("custody_location", "Lab Intake Bay - Anti-Static Bin").asString() : "Lab Intake Bay - Anti-Static Bin";
+
+    std::string now = getCurrentIsoTimestamp();
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    auto &c = it->second;
+    c.physicalReceiptConfirmed = true;
+    c.receivedAt = now;
+    c.receivedBy = auth.fullName;
+    c.receivedConditionNotes = notes;
+    c.currentCustodyLocation = custody;
+    c.recoveryStatus = "device_received";
+    c.progressPercentage = 20;
+    c.updatedAt = now;
+
+    // Update alias
+    s_recoveryCases[c.caseReference] = c;
+    s_recoveryCases[c.id] = c;
+
+    InternalRecoveryEvent ev;
+    ev.id = "ev-" + std::to_string(s_recoveryEvents.size() + 1);
+    ev.caseReference = c.caseReference;
+    ev.eventType = "physical_receipt";
+    ev.fromStatus = "intake_submitted";
+    ev.toStatus = "device_received";
+    ev.actorType = "staff";
+    ev.actorName = auth.fullName;
+    ev.custodyLocation = custody;
+    ev.publicNotes = "Device physically verified and logged into anti-static laboratory custody.";
+    ev.internalDiagnosticNotes = notes;
+    ev.createdAt = now;
+    s_recoveryEvents.push_back(ev);
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = caseToJson(c, true);
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::recordDiagnosis(const drogon::HttpRequestPtr &req,
+                                        std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                        const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    auto jsonPtr = req->jsonObject();
+    if (!jsonPtr) {
+        Json::Value err;
+        err["error"] = "Invalid diagnosis payload";
+        err["code"] = "BAD_REQUEST";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string complexity = jsonPtr->get("complexity", "standard").asString();
+    std::string internalNotes = jsonPtr->get("internal_notes", "").asString();
+    std::string publicSummary = jsonPtr->get("public_summary", "").asString();
+
+    std::string now = getCurrentIsoTimestamp();
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    auto &c = it->second;
+    c.diagnosisStatus = "completed";
+    c.diagnosticComplexity = complexity;
+    c.internalDiagnosticNotes = internalNotes;
+    c.publicDiagnosticSummary = publicSummary.empty() ? "Diagnostic inspection complete." : publicSummary;
+    c.recoveryStatus = "diagnosing";
+    c.progressPercentage = 35;
+    c.updatedAt = now;
+
+    s_recoveryCases[c.caseReference] = c;
+    s_recoveryCases[c.id] = c;
+
+    InternalRecoveryEvent ev;
+    ev.id = "ev-" + std::to_string(s_recoveryEvents.size() + 1);
+    ev.caseReference = c.caseReference;
+    ev.eventType = "diagnosis_updated";
+    ev.fromStatus = "device_received";
+    ev.toStatus = "diagnosing";
+    ev.actorType = "staff";
+    ev.actorName = auth.fullName;
+    ev.custodyLocation = c.currentCustodyLocation;
+    ev.publicNotes = c.publicDiagnosticSummary;
+    ev.internalDiagnosticNotes = internalNotes;
+    ev.createdAt = now;
+    s_recoveryEvents.push_back(ev);
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = caseToJson(c, true);
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::issueQuotation(const drogon::HttpRequestPtr &req,
+                                       std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                       const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    auto jsonPtr = req->jsonObject();
+    if (!jsonPtr) {
+        Json::Value err;
+        err["error"] = "Invalid quotation payload";
+        err["code"] = "BAD_REQUEST";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    double amount = jsonPtr->get("amount", 0.0).asDouble();
+    if (amount <= 0.0) {
+        amount = jsonPtr->get("quoted_amount", 0.0).asDouble();
+    }
+    if (amount <= 0.0) {
+        Json::Value err;
+        err["error"] = "Quotation amount must be positive";
+        err["code"] = "VALIDATION_FAILED";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string now = getCurrentIsoTimestamp();
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    auto &c = it->second;
+    c.quotationAmount = amount;
+    c.quotationStatus = "issued";
+    c.recoveryStatus = "quote_pending";
+    c.progressPercentage = 40;
+    c.updatedAt = now;
+
+    s_recoveryCases[c.caseReference] = c;
+    s_recoveryCases[c.id] = c;
+
+    InternalRecoveryEvent ev;
+    ev.id = "ev-" + std::to_string(s_recoveryEvents.size() + 1);
+    ev.caseReference = c.caseReference;
+    ev.eventType = "quotation_issued";
+    ev.fromStatus = "diagnosing";
+    ev.toStatus = "quote_pending";
+    ev.actorType = "staff";
+    ev.actorName = auth.fullName;
+    ev.custodyLocation = c.currentCustodyLocation;
+    ev.publicNotes = "Manual quotation generated. Awaiting client review and approval.";
+    ev.createdAt = now;
+    s_recoveryEvents.push_back(ev);
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = caseToJson(c, true);
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::decideQuotation(const drogon::HttpRequestPtr &req,
+                                        std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                        const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    auto jsonPtr = req->jsonObject();
+    if (!jsonPtr) {
+        Json::Value err;
+        err["error"] = "Invalid quotation decision payload";
+        err["code"] = "BAD_REQUEST";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string decision = jsonPtr->get("decision", "").asString();
+    std::string approvedBy = jsonPtr->get("approved_by", auth.fullName).asString();
+
+    if (decision != "approved" && decision != "rejected") {
+        Json::Value err;
+        err["error"] = "Decision must be 'approved' or 'rejected'";
+        err["code"] = "VALIDATION_FAILED";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string now = getCurrentIsoTimestamp();
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    auto &c = it->second;
+    c.quotationStatus = decision;
+    if (decision == "approved") {
+        c.quotationApprovedAt = now;
+        c.quotationApprovedBy = approvedBy;
+        c.recoveryStatus = "quote_approved";
+        c.progressPercentage = 50;
+    } else {
+        c.recoveryStatus = "quote_rejected";
+        c.progressPercentage = 45;
+    }
+    c.updatedAt = now;
+
+    s_recoveryCases[c.caseReference] = c;
+    s_recoveryCases[c.id] = c;
+
+    InternalRecoveryEvent ev;
+    ev.id = "ev-" + std::to_string(s_recoveryEvents.size() + 1);
+    ev.caseReference = c.caseReference;
+    ev.eventType = (decision == "approved") ? "quotation_approved" : "quotation_rejected";
+    ev.fromStatus = "quote_pending";
+    ev.toStatus = c.recoveryStatus;
+    ev.actorType = "staff";
+    ev.actorName = approvedBy;
+    ev.custodyLocation = c.currentCustodyLocation;
+    ev.publicNotes = (decision == "approved")
+        ? "Quotation approved by client. Case authorized for laboratory recovery."
+        : "Quotation rejected by client. Device held for return collection.";
+    ev.createdAt = now;
+    s_recoveryEvents.push_back(ev);
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = caseToJson(c, true);
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::transitionStatus(const drogon::HttpRequestPtr &req,
+                                         std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                         const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    auto jsonPtr = req->jsonObject();
+    if (!jsonPtr) {
+        Json::Value err;
+        err["error"] = "Invalid transition payload";
+        err["code"] = "BAD_REQUEST";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string targetStatus = jsonPtr->get("status", "").asString();
+    std::string notes = jsonPtr->get("notes", "").asString();
+
+    static const std::unordered_map<std::string, bool> validStatuses = {
+        {"intake_submitted", true},
+        {"device_received", true},
+        {"diagnosing", true},
+        {"quote_pending", true},
+        {"quote_approved", true},
+        {"quote_rejected", true},
+        {"in_recovery", true},
+        {"recovery_completed", true},
+        {"recovery_unrecoverable", true},
+        {"device_returned", true}
+    };
+
+    if (validStatuses.find(targetStatus) == validStatuses.end()) {
+        Json::Value err;
+        err["error"] = "Invalid recovery status: " + targetStatus;
+        err["code"] = "INVALID_STATUS";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string now = getCurrentIsoTimestamp();
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    auto &c = it->second;
+
+    // =========================================================================
+    // APPROVAL GATE ENFORCEMENT
+    // =========================================================================
+
+    // Gate 1: Cannot transition to "in_recovery" without physical device receipt!
+    if (targetStatus == "in_recovery" && !c.physicalReceiptConfirmed) {
+        Json::Value err;
+        err["error"] = "Cannot begin recovery: physical device has not been received at laboratory";
+        err["code"] = "DEVICE_NOT_RECEIVED";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k422UnprocessableEntity);
+        callback(resp);
+        return;
+    }
+
+    // Gate 2: Cannot transition to "in_recovery" without quotation approval!
+    if (targetStatus == "in_recovery" && c.quotationStatus != "approved") {
+        Json::Value err;
+        err["error"] = "Cannot initiate recovery without client quotation approval and signed estimate";
+        err["code"] = "APPROVAL_GATE_REQUIRED";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k422UnprocessableEntity);
+        callback(resp);
+        return;
+    }
+
+    // Gate 3: Cannot transition backwards into "intake_submitted"
+    if (targetStatus == "intake_submitted" && c.recoveryStatus != "intake_submitted") {
+        Json::Value err;
+        err["error"] = "Cannot regress active recovery case back to intake submission stage";
+        err["code"] = "INVALID_TRANSITION";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k422UnprocessableEntity);
+        callback(resp);
+        return;
+    }
+
+    std::string prevStatus = c.recoveryStatus;
+    c.recoveryStatus = targetStatus;
+
+    if (targetStatus == "in_recovery") c.progressPercentage = 65;
+    else if (targetStatus == "recovery_completed") c.progressPercentage = 95;
+    else if (targetStatus == "device_returned") c.progressPercentage = 100;
+
+    if (jsonPtr->isMember("files_recovered_count")) {
+        c.filesRecoveredCount = jsonPtr->get("files_recovered_count", 0).asInt();
+    }
+    if (jsonPtr->isMember("data_size_recovered_mb")) {
+        c.dataSizeRecoveredMb = jsonPtr->get("data_size_recovered_mb", 0.0).asDouble();
+    }
+
+    c.updatedAt = now;
+
+    s_recoveryCases[c.caseReference] = c;
+    s_recoveryCases[c.id] = c;
+
+    InternalRecoveryEvent ev;
+    ev.id = "ev-" + std::to_string(s_recoveryEvents.size() + 1);
+    ev.caseReference = c.caseReference;
+    ev.eventType = "status_transition";
+    ev.fromStatus = prevStatus;
+    ev.toStatus = targetStatus;
+    ev.actorType = "staff";
+    ev.actorName = auth.fullName;
+    ev.custodyLocation = c.currentCustodyLocation;
+    ev.publicNotes = notes.empty() ? ("Status updated to " + targetStatus) : notes;
+    ev.createdAt = now;
+    s_recoveryEvents.push_back(ev);
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = caseToJson(c, true);
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::transferCustody(const drogon::HttpRequestPtr &req,
+                                        std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                        const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    auto jsonPtr = req->jsonObject();
+    if (!jsonPtr) {
+        Json::Value err;
+        err["error"] = "Invalid custody payload";
+        err["code"] = "BAD_REQUEST";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string newLocation = jsonPtr->get("custody_location", "").asString();
+    std::string notes = jsonPtr->get("notes", "").asString();
+
+    if (newLocation.length() < 3) {
+        Json::Value err;
+        err["error"] = "Valid custody location name is required (e.g., 'Cleanroom Bench 2', 'Vault Shelf B')";
+        err["code"] = "VALIDATION_FAILED";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string now = getCurrentIsoTimestamp();
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    auto &c = it->second;
+    c.currentCustodyLocation = newLocation;
+    c.updatedAt = now;
+
+    s_recoveryCases[c.caseReference] = c;
+    s_recoveryCases[c.id] = c;
+
+    InternalRecoveryEvent ev;
+    ev.id = "ev-" + std::to_string(s_recoveryEvents.size() + 1);
+    ev.caseReference = c.caseReference;
+    ev.eventType = "custody_transfer";
+    ev.fromStatus = c.recoveryStatus;
+    ev.toStatus = c.recoveryStatus;
+    ev.actorType = "staff";
+    ev.actorName = auth.fullName;
+    ev.custodyLocation = newLocation;
+    ev.publicNotes = "Physical device transferred to " + newLocation;
+    ev.internalDiagnosticNotes = notes;
+    ev.createdAt = now;
+    s_recoveryEvents.push_back(ev);
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = caseToJson(c, true);
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}
+
+void RecoveryController::returnDevice(const drogon::HttpRequestPtr &req,
+                                     std::function<void(const drogon::HttpResponsePtr &)> &&callback,
+                                     const std::string &id) {
+    if (req->method() == drogon::Options) {
+        callback(drogon::HttpResponse::newHttpResponse());
+        return;
+    }
+
+    std::string reqId = req->attributes()->get("request_id");
+    auto auth = AuthController::verifyRequestSession(req);
+    if (!auth.authenticated) {
+        Json::Value err;
+        err["error"] = auth.errorMessage;
+        err["code"] = auth.errorCode;
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(auth.statusCode);
+        callback(resp);
+        return;
+    }
+
+    auto jsonPtr = req->jsonObject();
+    if (!jsonPtr) {
+        Json::Value err;
+        err["error"] = "Invalid return payload";
+        err["code"] = "BAD_REQUEST";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k400BadRequest);
+        callback(resp);
+        return;
+    }
+
+    std::string carrier = jsonPtr->get("return_carrier", "Lab Counter Handover").asString();
+    std::string tracking = jsonPtr->get("return_tracking_number", "").asString();
+    std::string recipient = jsonPtr->get("return_recipient_name", "").asString();
+    std::string notes = jsonPtr->get("notes", "Device returned to client in original anti-static envelope").asString();
+
+    std::string now = getCurrentIsoTimestamp();
+
+    std::lock_guard<std::mutex> lock(s_recoveryMutex);
+    ensureDefaultRecoverySeeded();
+
+    auto it = s_recoveryCases.find(id);
+    if (it == s_recoveryCases.end()) {
+        Json::Value err;
+        err["error"] = "Recovery case not found";
+        err["code"] = "NOT_FOUND";
+        if (!reqId.empty()) err["request_id"] = reqId;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(err);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+        return;
+    }
+
+    auto &c = it->second;
+    c.returnCarrier = carrier;
+    c.returnTrackingNumber = tracking;
+    c.returnRecipientName = recipient.empty() ? c.customerName : recipient;
+    c.returnDispatchedAt = now;
+    c.currentCustodyLocation = "Returned to Client / Handed Over";
+    c.recoveryStatus = "device_returned";
+    c.progressPercentage = 100;
+    c.updatedAt = now;
+
+    s_recoveryCases[c.caseReference] = c;
+    s_recoveryCases[c.id] = c;
+
+    InternalRecoveryEvent ev;
+    ev.id = "ev-" + std::to_string(s_recoveryEvents.size() + 1);
+    ev.caseReference = c.caseReference;
+    ev.eventType = "device_returned";
+    ev.fromStatus = "recovery_completed";
+    ev.toStatus = "device_returned";
+    ev.actorType = "staff";
+    ev.actorName = auth.fullName;
+    ev.custodyLocation = "Returned to Client";
+    ev.publicNotes = "Device returned to " + c.returnRecipientName + " via " + carrier + (tracking.empty() ? "" : (" (Tracking: " + tracking + ")"));
+    ev.internalDiagnosticNotes = notes;
+    ev.createdAt = now;
+    s_recoveryEvents.push_back(ev);
+
+    Json::Value res;
+    res["status"] = "ok";
+    res["data"] = caseToJson(c, true);
+    if (!reqId.empty()) res["request_id"] = reqId;
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(res);
+    callback(resp);
+}

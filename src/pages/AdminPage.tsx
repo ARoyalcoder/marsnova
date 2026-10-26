@@ -597,7 +597,7 @@ export const AdminPage: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '16px 20px',
+          padding: '60px 20px',
           position: 'relative',
           overflow: 'hidden',
           background: isNeumorphic
@@ -754,7 +754,7 @@ export const AdminPage: React.FC = () => {
             <div
               className={isNeumorphic ? 'neumorphic-card' : 'contact-card'}
               style={{
-                padding: '26px 30px 22px',
+                padding: '40px 36px 36px',
                 borderRadius: '32px',
                 background: isNeumorphic
                   ? 'linear-gradient(160deg, #FFFFFF 0%, #F5F8FE 100%)'
@@ -771,9 +771,9 @@ export const AdminPage: React.FC = () => {
               {/* 3D Wave Ribbon Emblem (Embossed Neumorphic Square Pill) */}
               <div
                 style={{
-                  width: '68px',
-                  height: '68px',
-                  margin: '0 auto 14px',
+                  width: '92px',
+                  height: '92px',
+                  margin: '0 auto 24px',
                   borderRadius: '26px',
                   background: isNeumorphic
                     ? 'linear-gradient(145deg, #FFFFFF, #EAF1FC)'
@@ -789,7 +789,7 @@ export const AdminPage: React.FC = () => {
                 }}
               >
                 {/* 3D Layered Flame/Ribbon Icon matching user design */}
-                <svg width="34" height="34" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg width="48" height="48" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path
                     d="M32 10C35 15 39 19 44 21C42 27 38 31 34 32C29 33 26 30 27 24C28 18 30 13 32 10Z"
                     fill="url(#ribbon-light)"
@@ -823,10 +823,10 @@ export const AdminPage: React.FC = () => {
               </div>
 
               {/* Title & Subtitle */}
-              <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <div style={{ textAlign: 'center', marginBottom: '26px' }}>
                 <h1
                   style={{
-                    fontSize: '24px',
+                    fontSize: '28px',
                     fontWeight: 800,
                     color: isNeumorphic ? '#0F172A' : '#FFFFFF',
                     marginBottom: '6px',
@@ -1063,6 +1063,122 @@ export const AdminPage: React.FC = () => {
                 </button>
               </form>
 
+              {/* Divider: OR CONTINUE WITH */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  margin: '28px 0 20px'
+                }}
+              >
+                <div style={{ flex: 1, height: '1px', background: isNeumorphic ? 'rgba(166, 185, 214, 0.35)' : 'rgba(255, 255, 255, 0.08)' }} />
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    color: isNeumorphic ? '#62748E' : 'var(--text-dim)',
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  Or Quick Login With
+                </span>
+                <div style={{ flex: 1, height: '1px', background: isNeumorphic ? 'rgba(166, 185, 214, 0.35)' : 'rgba(255, 255, 255, 0.08)' }} />
+              </div>
+
+              {/* Quick Role Fill Buttons (Neumorphic Square Tiles like social buttons in reference) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <button
+                  type="button"
+                  title="Super Admin (Aditya Verma)"
+                  onClick={() => {
+                    setLoginEmail('admin@marsnova.in');
+                    setLoginPassword('Admin@2026!');
+                    toast.success('Filled Super Admin credentials');
+                  }}
+                  className={isNeumorphic ? 'neumorphic-icon-btn' : ''}
+                  style={{
+                    height: '56px',
+                    borderRadius: '16px',
+                    background: isNeumorphic ? '#F4F8FE' : 'var(--bg-elevated)',
+                    border: isNeumorphic ? '1px solid rgba(255, 255, 255, 0.95)' : '1px solid var(--border-muted)',
+                    boxShadow: isNeumorphic
+                      ? '6px 6px 14px rgba(166, 185, 214, 0.35), -6px -6px 14px #ffffff'
+                      : 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Crown size={18} style={{ color: '#1052E8' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: isNeumorphic ? '#0F172A' : '#F5F7FF' }}>Admin</span>
+                </button>
+
+                <button
+                  type="button"
+                  title="Agency Manager (Priya Sharma)"
+                  onClick={() => {
+                    setLoginEmail('manager@marsnova.in');
+                    setLoginPassword('Manager@2026!');
+                    toast.success('Filled Manager credentials');
+                  }}
+                  className={isNeumorphic ? 'neumorphic-icon-btn' : ''}
+                  style={{
+                    height: '56px',
+                    borderRadius: '16px',
+                    background: isNeumorphic ? '#F4F8FE' : 'var(--bg-elevated)',
+                    border: isNeumorphic ? '1px solid rgba(255, 255, 255, 0.95)' : '1px solid var(--border-muted)',
+                    boxShadow: isNeumorphic
+                      ? '6px 6px 14px rgba(166, 185, 214, 0.35), -6px -6px 14px #ffffff'
+                      : 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Briefcase size={18} style={{ color: '#0EA5E9' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: isNeumorphic ? '#0F172A' : '#F5F7FF' }}>Manager</span>
+                </button>
+
+                <button
+                  type="button"
+                  title="Editor (Rohan Das)"
+                  onClick={() => {
+                    setLoginEmail('editor@marsnova.in');
+                    setLoginPassword('Editor@2026!');
+                    toast.success('Filled Editor credentials');
+                  }}
+                  className={isNeumorphic ? 'neumorphic-icon-btn' : ''}
+                  style={{
+                    height: '56px',
+                    borderRadius: '16px',
+                    background: isNeumorphic ? '#F4F8FE' : 'var(--bg-elevated)',
+                    border: isNeumorphic ? '1px solid rgba(255, 255, 255, 0.95)' : '1px solid var(--border-muted)',
+                    boxShadow: isNeumorphic
+                      ? '6px 6px 14px rgba(166, 185, 214, 0.35), -6px -6px 14px #ffffff'
+                      : 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Edit3 size={18} style={{ color: '#8B5CF6' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: isNeumorphic ? '#0F172A' : '#F5F7FF' }}>Editor</span>
+                </button>
+              </div>
 
               {/* Tagline Footer (like "PLAY • COMPETE • GROW TOGETHER" in reference) */}
               <div

@@ -194,28 +194,28 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenRecoveryTracker }) => {
                   path: '/services',
                   title: 'Creative & Tech Services',
                   subtitle: 'Video, Editing & Social',
-                  icon: <WandSparklesIcon size={22} color="#9333EA" />,
+                  icon: <WandSparklesIcon size={16} color="#9333EA" />,
                   iconBg: '#F3E8FF'
                 },
                 {
                   path: '/portfolio',
                   title: 'Portfolio Case Studies',
                   subtitle: 'Client Works & Showreels',
-                  icon: <FilmPlayIcon size={22} color="#0284C7" />,
+                  icon: <FilmPlayIcon size={16} color="#0284C7" />,
                   iconBg: '#E0F2FE'
                 },
                 {
                   path: '/lab',
                   title: 'MarsNova Lab Academy',
                   subtitle: 'Workshops & Mentorship',
-                  icon: <AcademyGradCapIcon size={22} color="#E11D48" />,
+                  icon: <AcademyGradCapIcon size={16} color="#E11D48" />,
                   iconBg: '#FFE4E6'
                 },
                 {
                   path: '/admin',
                   title: 'Operations Admin',
                   subtitle: 'Staff Portal & Inquiries',
-                  icon: <ShieldUserIcon size={22} color="#7C3AED" />,
+                  icon: <ShieldUserIcon size={16} color="#7C3AED" />,
                   iconBg: '#EDE9FE'
                 }
               ].map((item) => {
@@ -240,7 +240,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenRecoveryTracker }) => {
                         </div>
                       </div>
                       <ChevronRight
-                        size={20}
+                        size={15}
                         className={`explore-item-chevron ${isActive ? 'active' : ''}`}
                       />
                     </Link>
