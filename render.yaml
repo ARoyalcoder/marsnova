@@ -1,0 +1,43 @@
+services:
+  # -----------------------------------------------------------------------------
+  # MarsNova Drogon C++ Backend Web Service
+  # -----------------------------------------------------------------------------
+  - type: web
+    name: marsnova-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile.backend
+    dockerContext: .
+    plan: starter # Change to 'free' if evaluating on the free tier
+    region: oregon
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: AUTO_MIGRATE
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: marsnova-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://marsnova.vercel.app,https://marsnova.in,http://localhost:5173
+      - key: MARSNOVA_BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: MARSNOVA_BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: MARSNOVA_BOOTSTRAP_ADMIN_NAME
+        value: Studio Administrator
+      - key: WHATSAPP_NUMBER
+        value: "917208591595"
+
+databases:
+  # -----------------------------------------------------------------------------
+  # MarsNova PostgreSQL Managed Database
+  # -----------------------------------------------------------------------------
+  - name: marsnova-db
+    databaseName: marsnova_db
+    user: marsnova_app
+    plan: starter # Change to 'free' if evaluating on the free tier
+    region: oregon

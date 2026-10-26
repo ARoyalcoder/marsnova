@@ -10,13 +10,43 @@ echo "=========================================================="
 echo "   MarsNova PostgreSQL Automated Migration Runner         "
 echo "=========================================================="
 
+# Parse DATABASE_URL if provided (e.g. Render, Railway, Fly.io)
+if [ -n "$DATABASE_URL" ]; then
+    echo "[Migration] Extracting credentials from DATABASE_URL..."
+    proto_stripped=$(echo "$DATABASE_URL" | sed -E "s|^postgres(ql)?://||")
+    user_pass=$(echo "$proto_stripped" | awk -F'@' '{print $1}')
+    host_rest=$(echo "$proto_stripped" | awk -F'@' '{print $2}')
+    if [ -n "$host_rest" ]; then
+        parsed_user=$(echo "$user_pass" | cut -d':' -f1)
+        parsed_pass=$(echo "$user_pass" | cut -s -d':' -f2-)
+        [ -n "$parsed_user" ] && DB_USER="$parsed_user"
+        [ -n "$parsed_pass" ] && DB_PASSWORD="$parsed_pass"
+    else
+        host_rest="$proto_stripped"
+    fi
+    host_port=$(echo "$host_rest" | cut -d'/' -f1)
+    db_query=$(echo "$host_rest" | cut -s -d'/' -f2-)
+    parsed_host=$(echo "$host_port" | cut -d':' -f1)
+    parsed_port=$(echo "$host_port" | cut -s -d':' -f2)
+    parsed_db=$(echo "$db_query" | cut -d'?' -f1)
+    [ -n "$parsed_host" ] && DB_HOST="$parsed_host"
+    [ -n "$parsed_port" ] && DB_PORT="$parsed_port"
+    [ -n "$parsed_db" ] && DB_NAME="$parsed_db"
+fi
+
 export PGHOST="${DB_HOST:-postgres}"
 export PGPORT="${DB_PORT:-5432}"
 export PGDATABASE="${DB_NAME:-marsnova_db}"
 export PGUSER="${DB_USER:-postgres}"
 export PGPASSWORD="${DB_PASSWORD:-}"
 
-MIGRATIONS_DIR="${MIGRATIONS_DIR:-/migrations}"
+if [ -d "/migrations" ]; then
+    MIGRATIONS_DIR="/migrations"
+elif [ -d "/app/migrations" ]; then
+    MIGRATIONS_DIR="/app/migrations"
+else
+    MIGRATIONS_DIR="${MIGRATIONS_DIR:-./backend/migrations}"
+fi
 
 echo "[Migration] Target database: ${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}"
 

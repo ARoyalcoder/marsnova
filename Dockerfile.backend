@@ -40,7 +40,7 @@ FROM debian:bookworm-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install only shared runtime libraries, CA certificates, and curl for health check
+# Install only shared runtime libraries, CA certificates, curl for health check, and postgresql-client
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -49,6 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     zlib1g \
     tzdata \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Create dedicated non-root service user and group
@@ -60,13 +61,15 @@ WORKDIR /app
 # Copy compiled backend binary from builder stage
 COPY --from=builder /src/backend/build/marsnova_backend /usr/local/bin/marsnova_backend
 
-# Copy default config template and runtime entrypoint
+# Copy default config template, runtime entrypoint, and database migrations
 COPY backend/config.json /app/config.json
 COPY docker/scripts/entrypoint-backend.sh /entrypoint-backend.sh
+COPY docker/scripts/migrate.sh /migrate.sh
+COPY backend/migrations /app/migrations
 
 # Prepare uploads directory and assign ownership
 RUN mkdir -p /app/uploads && \
-    chmod +x /entrypoint-backend.sh /usr/local/bin/marsnova_backend && \
+    chmod +x /entrypoint-backend.sh /migrate.sh /usr/local/bin/marsnova_backend && \
     chown -R marsnova:marsnova /app
 
 # Switch to non-root execution
@@ -75,7 +78,7 @@ USER marsnova
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1:8080/api/v1/health || exit 1
+    CMD curl -f http://127.0.0.1:${PORT:-8080}/api/v1/health || exit 1
 
 STOPSIGNAL SIGTERM
 
